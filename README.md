@@ -108,7 +108,7 @@ PUT  /api/essays/{id}/like             # 좋아요
 PUT  /api/essays/{id}/bookmark         # 북마크
 ```
 
-## 🗄 데이터베이스 스키마
+## 데이터베이스 스키마
 
 ### 핵심 테이블
 
@@ -150,7 +150,7 @@ CREATE TABLE essays (
 );
 ```
 
-## 🔧 환경 설정
+## 환경 설정
 
 ### 필수 환경변수
 
@@ -249,7 +249,7 @@ docker-compose up -d
 docker-compose logs -f app
 ```
 
-## 🧪 테스트
+## 테스트
 
 ```bash
 # 단위 테스트 실행
@@ -325,4 +325,4 @@ git push origin main
 
 ---
 
-**나만의 에세이**로 당신의 일상이 특별한 이야기가 되길 바랍니다. ✨
+**나만의 에세이**로 당신의 일상이 특별한 이야기가 되길 바랍니다.

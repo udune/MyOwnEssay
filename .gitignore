@@ -37,3 +37,14 @@ out/
 .vscode/
 
 .env
+CLAUDE.md
+.claude/api.md
+.claude/dbschema.md
+.claude/erd.md
+.claude/figma.md
+.claude/mvp.md
+.claude/springplan.md
+.claude/textblockwireframe.md
+.claude/unityrole.md
+.claude/userflow.md
+.claude/wireframe.md

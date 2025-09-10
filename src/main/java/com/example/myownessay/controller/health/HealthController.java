@@ -1,4 +1,4 @@
-package com.example.myownessay.controller;
+package com.example.myownessay.controller.health;
 
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;

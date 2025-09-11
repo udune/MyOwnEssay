@@ -7,7 +7,7 @@ services:
     environment:
       POSTGRES_DB: essay_db # 데이터베이스 이름
       POSTGRES_USER: postgres # 사용자 이름
-      POSTGRES_PASSWORD: postgres # 비밀번호
+      POSTGRES_PASSWORD: ${DB_PASSWORD} # 비밀번호
     ports:
       - "5432:5432" # 포트 매핑
     volumes:
@@ -25,14 +25,14 @@ services:
     build: . # Dockerfile로 이미지 빌드
     container_name: essay-backend # 컨테이너 이름 고정
     environment:
-      SPRING_PROFILES_ACTIVE: dev # 개발 프로필 사용
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE} # 개발 프로필 사용
       
       DB_HOST: postgres # 데이터베이스 호스트
       DB_NAME: essay_db # 데이터베이스 이름
       DB_USERNAME: postgres # 데이터베이스 사용자 이름
-      DB_PASSWORD: postgres # 데이터베이스 비밀번호
+      DB_PASSWORD: ${DB_PASSWORD} # 데이터베이스 비밀번호
       
-      JWT_SECRET_KEY: essayJWTSecretKey # JWT 비밀 키
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY} # JWT 비밀 키
       
     ports:
         - "8080:8080" # 포트 매핑

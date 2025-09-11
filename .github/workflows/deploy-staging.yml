@@ -1,0 +1,67 @@
+name: Deploy to Staging
+
+# 워크 플로우 실행 조건: develop 브랜치에 Push 시
+on:
+  push:
+    branches:
+        - develop # develop 브랜치에 Push 시 실행
+
+jobs:
+    deploy-staging:
+      runs-on: ubuntu-latest # 최신 우분투 환경에서 실행
+      environment: staging # 스테이징 환경 설정
+
+      steps:
+        - name: Checkout code # 코드 체크아웃
+          uses: actions/checkout@v4 # 최신 버전 사용
+
+        - name: Build Docker Image # 도커 이미지 빌드
+          run: |
+            docker build -t essay-backend:staging-${{ github.sha }} .
+            docker tag essay-backend:staging-${{ github.sha }} essay-backend:staging-latest
+
+        - name: Save Docker Image # 도커 이미지 저장
+          run: docker save essay-backend:staging-latest | gzip > essay-backend-staging.tar.gz
+
+        - name: Copy Docker image to staging server # 스테이징 서버로 Docker 이미지 복사
+          uses: appleboy/scp-action@v0.1.4 # SCP 액션
+          with:
+            host: ${{ secrets.STAGING_HOST }} # 스테이징 서버 IP (GitHub Secrets 사용)
+            username: ${{ secrets.STAGING_USER }} # 스테이징 서버 사용자 이름 (GitHub Secrets 사용)
+            key: ${{ secrets.STAGING_SSH_KEY }} # 스테이징 서버 SSH 키 (GitHub Secrets 사용)
+            source: "essay-backend-staging.tar.gz"
+            target: "/tmp/"
+
+        - name: Deploy to staging server # 스테이징 서버에 배포
+          uses: appleboy/ssh-action@v0.1.6 # SSH 액션
+          with:
+            host: ${{ secrets.STAGING_HOST }} # 스테이징 서버 IP (GitHub Secrets 사용)
+            username: ${{ secrets.STAGING_USER }} # 스테이징 서버 사용자 이름 (GitHub Secrets 사용)
+            key: ${{ secrets.STAGING_SSH_KEY }} # 스테이징 서버 SSH 키 (GitHub Secrets 사용)
+            script: |
+              cd /tmp
+              docker load < essay-backend-staging.tar.gz
+              
+              export SPRING_PROFILES_ACTIVE=dev
+              export DB_PASSWORD=${{ secrets.STAGING_DB_PASSWORD }}
+              export JWT_SECRET_KEY=${{ secrets.STAGING_JWT_SECRET_KEY }}
+              
+              docker-compose down || true
+              docker-compose up -d
+              
+              docker system prune -f
+              rm -f essay-backend-staging.tar.gz
+
+        - name: Health Check # 헬스 체크
+          run: |
+            sleep 30 
+            curl -f ${{secrets.STAGING_URL}}/actuator/health || exit 1
+
+        - name: Deployment Notification # 배포 알림
+          if: always() # 항상 실행
+          run: |
+            if [ "${{job.status}}" == "success" ]; then
+              echo "배포 성공: ${{github.sha}}"
+            else
+              echo "배포 실패: ${{github.sha}}"
+            fi

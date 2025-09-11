@@ -1,0 +1,80 @@
+name: CI Pipeline
+
+# 워크 플로우 실행 조건: PR 생성/수정 시, develop 브랜치 Push 시
+on:
+  pull_request: # main, develop 브랜치에 대한 PR 생성/수정 시
+    branches:
+      - main
+      - develop
+  push: # develop  브랜치에 Push 시
+    branches:
+        - develop
+
+jobs:
+  test:
+    runs-on: ubuntu-latest # 최신 우분투 환경에서 실행
+
+    # PostgreSQL 서비스 설정
+    services:
+      postgres:
+        image: postgres:15 # PostgreSQL 버전 15 사용
+        env:
+          POSTGRES_DB: essay_db # 데이터베이스 이름
+          POSTGRES_USER: postgres # 사용자 이름
+          POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }} # 비밀번호 (GitHub Secrets 사용)
+        ports: # 포트 매핑
+          - 5432:5432
+        options: # 서비스 옵션
+          --health-cmd="pg_isready -U postgres -d essay_db" # PostgreSQL 상태 체크 명령어
+          --health-interval=30s # 30초마다 상태 체크
+          --health-timeout=5s # 5초 이내에 응답이 없으면 실패로 간주
+          --health-retries=5 # 최대 5번 재시도
+
+    steps: # 각 단계 정의
+        # 코드 체크아웃
+        - name: Checkout code # 코드 체크아웃
+          uses: actions/checkout@v4 # 최신 버전 사용
+
+        # JDK 17 설정
+        - name: Set up JDK 17 # JDK 17 설정
+          uses: actions/setup-java@v4 # 최신 버전 사용
+          with: # 설정 옵션
+              distribution: 'temurin' # Temurin 배포판 사용
+              java-version: '17' # JDK 버전 17
+
+        # Gradle 캐시 설정
+        - name: Cache Gradle packages # Gradle 캐시 설정
+          uses: actions/cache@v3 # 최신 버전 사용
+          with: # 캐시 옵션
+            path: |
+              ~/.gradle/caches
+              ~/.gradle/wrapper
+            key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle', '**/gradle-wrapper.properties') }}
+            restore-keys: ${{ runner.os }}-gradle- # 캐시 복원 키
+
+        # Gradle 실행 권한 부여
+        - name: Grant execute permission for gradlew
+          run: chmod +x gradlew # gradlew에 실행 권한 부여
+
+        # Gradle 테스트
+        - name: Run tests
+          run: ./gradlew test --no-daemon # 테스트 실행
+          env: # 환경 변수 설정
+            DB_HOST: localhost # 데이터베이스 호스트
+            DB_NAME: essay_db # 데이터베이스 이름
+            DB_USERNAME: postgres # 데이터베이스 사용자 이름
+            DB_PASSWORD: ${{ secrets.DB_PASSWORD }} # 데이터베이스 비밀번호 (GitHub Secrets 사용)
+            JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }} # JWT 비밀 키 (GitHub Secrets 사용)
+
+        # Gradle 빌드 (테스트 제외)
+        - name: Build application # 애플리케이션 빌드
+          run: ./gradlew build -x test --no-daemon # 테스트 제외하고 빌드
+
+        # 테스트 결과 업로드
+        - name: Upload test results
+          uses: dorny/test-reporter@v1
+          if: always() # 항상 실행
+          with:
+            name: Test Results # 결과 이름
+            path: build/test-results/test/*.xml # 테스트 결과 경로
+            reporter: java-junit # 리포터 유형

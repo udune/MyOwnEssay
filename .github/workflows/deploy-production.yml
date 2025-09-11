@@ -1,0 +1,96 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main # main 브랜치에 Push 시 실행
+  workflow_dispatch: # 수동 실행 가능
+
+jobs:
+  deploy-production:
+    runs-on: ubuntu-latest # 최신 우분투 환경에서 실행
+    environment: production # 프로덕션 환경 설정
+
+    steps:
+      - name: Checkout code # 코드 체크아웃
+        uses: actions/checkout@v4 # 최신 버전 사용
+
+      - name: Run tests before deployment # 배포 전 테스트 실행
+        run: |
+          chmod +x gradlew
+          ./gradlew test --no-daemon
+        env:
+          JWT_SECRET_KEY: ${{ secrets.TEST_JWT_SECRET_KEY }} # JWT 비밀 키 (GitHub Secrets 사용)
+
+      - name: Build Docker Image # 도커 이미지 빌드
+        run: |
+          docker build -t essay-backend:prod-${{ github.sha }} .
+          docker tag essay-backend:prod-${{ github.sha }} essay-backend:production-latest
+
+      - name: Save Docker Image
+        run: docker save essay-backend:production-latest | gzip > essay-backend-production.tar.gz
+
+      - name: Copy Docker image to production server # 프로덕션 서버로 Docker 이미지 복사
+        uses: appleboy/scp-action@v0.1.4 # SCP 액션 사용
+        with:
+          host: ${{ secrets.PRODUCTION_HOST }} # 프로덕션 서버 IP (GitHub Secrets 사용)
+          username: ${{ secrets.PRODUCTION_USER }} # 프로덕션 서버 사용자 이름 (GitHub Secrets 사용)
+          key: ${{ secrets.PRODUCTION_SSH_KEY }} # 프로덕션 서버 SSH 키 (GitHub Secrets 사용)
+          source: "essay-backend-production.tar.gz"
+          target: "/tmp/"
+
+      - name: Backup database # 데이터베이스 백업
+        uses: appleboy/ssh-action@v0.1.6 # SSH 액션 사용
+        with:
+          host: ${{ secrets.PRODUCTION_HOST }} # 프로덕션 서버 IP (GitHub Secrets 사용)
+          username: ${{ secrets.PRODUCTION_USER }} # 프로덕션 서버 사용자 이름 (GitHub Secrets 사용)
+          key: ${{ secrets.PRODUCTION_SSH_KEY }} # 프로덕션 서버 SSH 키 (GitHub Secrets 사용)
+          script: |
+            mkdir -p /backup
+            docker exec essay-postgres pg_dump -U postgres essay_db > /backup/essay_db_$(date +'%Y%m%d_%H%M%S').sql
+
+      - name: Deploy to production # 프로덕션 배포
+        uses: appleboy/ssh-action@v0.1.6 # SSH 액션 사용
+        with:
+          host: ${{ secrets.PRODUCTION_HOST }} # 프로덕션 서버 IP (GitHub Secrets 사용)
+          username: ${{ secrets.PRODUCTION_USER }} # 프로덕션 서버 사용자 이름 (GitHub Secrets 사용)
+          key: ${{ secrets.PRODUCTION_SSH_KEY }} # 프로덕션 서버 SSH 키 (GitHub Secrets 사용)
+          script: |
+            cd /tmp
+            docker load < essay-backend-production.tar.gz
+            
+            export SPRING_PROFILES_ACTIVE=prod
+            export DB_PASSWORD=${{ secrets.PRODUCTION_DB_PASSWORD }}
+            export JWT_SECRET_KEY=${{ secrets.PRODUCTION_JWT_SECRET_KEY }}
+            
+            docker-compose up -d postgres
+            sleep 10
+            docker-compose up -d app
+            
+            docker system prune -f
+            rm -f essay-backend-production.tar.gz
+
+      - name: Health Check # 헬스 체크
+        run: |
+          sleep 60
+          for i in {1..10}; do
+            if curl -f ${{ secrets.PRODUCTION_URL }}/actuator/health; then
+              echo "Health check 성공"
+              exit 0
+            fi
+            echo "Health check 실패. 10초 후 재시도..."
+            sleep 10
+          done
+          echo "Health check 실패"
+          exit 1
+
+      - name: Rollback on failure # 실패 시 롤백
+        if: failure() # 이전 단계가 실패한 경우에만 실행
+        uses: appleboy/ssh-action@v0.1.6 # SSH 액션 사용
+        with:
+          host: ${{ secrets.PRODUCTION_HOST }} # 프로덕션 서버 IP (GitHub Secrets 사용)
+          username: ${{ secrets.PRODUCTION_USER }} # 프로덕션 서버 사용자 이름 (GitHub Secrets 사용)
+          key: ${{ secrets.PRODUCTION_SSH_KEY }} # 프로덕션 서버 SSH 키 (GitHub Secrets 사용)
+          script: |
+            echo "배포 실패 - 로그 확인"
+            docker-compose logs app --tail=50

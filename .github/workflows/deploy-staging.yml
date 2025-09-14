@@ -1,67 +1,140 @@
 name: Deploy to Staging
 
-# 워크 플로우 실행 조건: develop 브랜치에 Push 시
+# 스테이징 배포 실행 조건
 on:
-  push:
-    branches:
-        - develop # develop 브랜치에 Push 시 실행
+  push: # 코드 푸시 시
+    branches: [develop] # develop 브랜치만
+  workflow_dispatch: # 수동 실행도 가능
 
 jobs:
-    deploy-staging:
-      runs-on: ubuntu-latest # 최신 우분투 환경에서 실행
-      environment: staging # 스테이징 환경 설정
+  deploy-staging:
+    runs-on: ubuntu-latest # 최신 Ubuntu 환경
+    environment: staging # GitHub Environment 'staging' 사용 (승인/보안 설정 가능)
 
-      steps:
-        - name: Checkout code # 코드 체크아웃
-          uses: actions/checkout@v4 # 최신 버전 사용
+    steps:
+      # 1. 소스코드 체크아웃
+      - name: Checkout code
+        uses: actions/checkout@v4 # 최신 체크아웃 액션
 
-        - name: Build Docker Image # 도커 이미지 빌드
-          run: |
-            docker build -t essay-backend:staging-${{ github.sha }} .
-            docker tag essay-backend:staging-${{ github.sha }} essay-backend:staging-latest
+      # 2. Java 개발 환경 설정
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin' # Eclipse Temurin JDK
+          java-version: '17' # Java 17
 
-        - name: Save Docker Image # 도커 이미지 저장
-          run: docker save essay-backend:staging-latest | gzip > essay-backend-staging.tar.gz
+      # 3. 배포 전 테스트 실행 (안전성 확보)
+      - name: Run tests before deployment
+        run: |
+          chmod +x gradlew # 실행 권한 부여
+          ./gradlew test --no-daemon # 테스트 실행
+        env:
+          JWT_SECRET_KEY: test-jwt-secret-key-for-ci-pipeline-must-be-256-bits # 테스트용 JWT 키
 
-        - name: Copy Docker image to staging server # 스테이징 서버로 Docker 이미지 복사
-          uses: appleboy/scp-action@v0.1.4 # SCP 액션
-          with:
-            host: ${{ secrets.STAGING_HOST }} # 스테이징 서버 IP (GitHub Secrets 사용)
-            username: ${{ secrets.STAGING_USER }} # 스테이징 서버 사용자 이름 (GitHub Secrets 사용)
-            key: ${{ secrets.STAGING_SSH_KEY }} # 스테이징 서버 SSH 키 (GitHub Secrets 사용)
-            source: "essay-backend-staging.tar.gz"
-            target: "/tmp/"
+      # 4. Docker 이미지 빌드
+      - name: Build Docker Image
+        run: |
+          # 커밋 해시를 포함한 태그로 이미지 빌드
+          docker build -t essay-backend:staging-${{ github.sha }} .
+          # latest 태그도 함께 생성
+          docker tag essay-backend:staging-${{ github.sha }} essay-backend:staging-latest
 
-        - name: Deploy to staging server # 스테이징 서버에 배포
-          uses: appleboy/ssh-action@v0.1.6 # SSH 액션
-          with:
-            host: ${{ secrets.STAGING_HOST }} # 스테이징 서버 IP (GitHub Secrets 사용)
-            username: ${{ secrets.STAGING_USER }} # 스테이징 서버 사용자 이름 (GitHub Secrets 사용)
-            key: ${{ secrets.STAGING_SSH_KEY }} # 스테이징 서버 SSH 키 (GitHub Secrets 사용)
-            script: |
-              cd /tmp
-              docker load < essay-backend-staging.tar.gz
-              
-              export SPRING_PROFILES_ACTIVE=dev
-              export DB_PASSWORD=${{ secrets.STAGING_DB_PASSWORD }}
-              export JWT_SECRET_KEY=${{ secrets.STAGING_JWT_SECRET_KEY }}
-              
-              docker-compose down || true
-              docker-compose up -d
-              
-              docker system prune -f
-              rm -f essay-backend-staging.tar.gz
+      # 5. Docker 이미지를 파일로 저장 (서버 전송용)
+      - name: Save Docker Image
+        run: docker save essay-backend:staging-latest | gzip > essay-backend-staging.tar.gz
 
-        - name: Health Check # 헬스 체크
-          run: |
-            sleep 30 
-            curl -f ${{secrets.STAGING_URL}}/actuator/health || exit 1
+      # 6. 필요한 파일들을 스테이징 서버로 복사
+      - name: Copy files to staging server
+        uses: appleboy/scp-action@v0.1.4 # SCP 파일 전송 액션
+        with:
+          host: ${{ secrets.STAGING_HOST }} # 스테이징 서버 IP
+          username: ${{ secrets.STAGING_USER }} # SSH 사용자명
+          key: ${{ secrets.STAGING_SSH_KEY }} # SSH 개인키
+          # 전송할 파일들: Docker 이미지 + Docker Compose 설정 + 데이터베이스 초기화 스크립트
+          source: "essay-backend-staging.tar.gz,docker-compose.yml,init.sql"
+          target: "/tmp/essay-staging/" # 서버의 대상 디렉토리
 
-        - name: Deployment Notification # 배포 알림
-          if: always() # 항상 실행
-          run: |
-            if [ "${{job.status}}" == "success" ]; then
-              echo "배포 성공: ${{github.sha}}"
-            else
-              echo "배포 실패: ${{github.sha}}"
+      # 7. 스테이징 서버에 배포 실행
+      - name: Deploy to staging server
+        uses: appleboy/ssh-action@v0.1.6 # SSH 명령 실행 액션
+        with:
+          host: ${{ secrets.STAGING_HOST }} # 스테이징 서버 IP
+          username: ${{ secrets.STAGING_USER }} # SSH 사용자명
+          key: ${{ secrets.STAGING_SSH_KEY }} # SSH 개인키
+          script: | # 서버에서 실행할 스크립트
+            cd /tmp/essay-staging # 작업 디렉토리 이동
+            
+            # 새로운 Docker 이미지 로드
+            docker load < essay-backend-staging.tar.gz
+            
+            # 환경변수 설정
+            export SPRING_PROFILES_ACTIVE=dev # 개발 프로필 사용
+            export DB_PASSWORD="${{ secrets.STAGING_DB_PASSWORD }}" # 스테이징 DB 비밀번호
+            export JWT_SECRET_KEY="${{ secrets.STAGING_JWT_SECRET }}" # 스테이징 JWT 키
+            
+            # 기존 컨테이너들 정리 (--remove-orphans로 고아 컨테이너도 제거)
+            docker-compose down --remove-orphans || true # 실패해도 계속 진행
+            
+            # PostgreSQL 먼저 시작
+            docker-compose up -d postgres
+            
+            # PostgreSQL 준비 대기 (15초 기본 대기 + 준비 상태 확인)
+            sleep 15
+            until docker exec essay-postgres pg_isready -U postgres; do
+              echo "Waiting for PostgreSQL..." # PostgreSQL 준비 대기 메시지
+              sleep 5 # 5초마다 재시도
+            done
+            
+            # 애플리케이션 컨테이너 시작
+            docker-compose up -d app
+            
+            # 시스템 정리 (사용하지 않는 이미지/컨테이너 제거)
+            docker system prune -f
+            # 전송된 이미지 파일 삭제
+            rm -f essay-backend-staging.tar.gz
+
+      # 8. 배포 후 헬스체크 (재시도 로직 포함)
+      - name: Health Check with retry
+        run: |
+          echo "Waiting for application to start..." # 애플리케이션 시작 대기
+          sleep 30 # 30초 기본 대기
+          
+          # 10번 시도하여 헬스체크
+          for i in {1..10}; do
+            if curl -f -s ${{ secrets.STAGING_URL }}/api/health; then
+              echo "✅ Health check passed" # 성공 메시지
+              exit 0 # 성공 종료
             fi
+            echo "⏳ Attempt $i/10 failed, retrying in 10 seconds..." # 재시도 메시지
+            sleep 10 # 10초 대기 후 재시도
+          done
+          
+          echo "❌ Health check failed after 10 attempts" # 실패 메시지
+          exit 1 # 실패 종료
+
+      # 9. 배포 실패 시 롤백 처리
+      - name: Rollback on failure
+        if: failure() # 이전 단계 중 하나라도 실패한 경우에만 실행
+        uses: appleboy/ssh-action@v0.1.6
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          script: |
+            echo "🔄 Rolling back due to deployment failure..." # 롤백 시작 메시지
+            cd /tmp/essay-staging
+            # 최근 50줄의 애플리케이션 로그 출력 (디버깅용)
+            docker-compose logs app --tail=50
+            # 모든 컨테이너 중단 (실패해도 계속)
+            docker-compose down || true
+
+      # 10. 배포 결과 알림
+      - name: Notify deployment result
+        if: always() # 성공/실패 관계없이 항상 실행
+        run: |
+          # 작업 상태에 따른 메시지 출력
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "🎉 Staging deployment successful: ${{ github.sha }}" # 성공 메시지
+          else
+            echo "💥 Staging deployment failed: ${{ github.sha }}" # 실패 메시지
+          fi

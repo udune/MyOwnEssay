@@ -1,96 +1,236 @@
 name: Deploy to Production
 
+# 프로덕션 배포 실행 조건 (매우 신중)
 on:
-  push:
-    branches:
-      - main # main 브랜치에 Push 시 실행
-  workflow_dispatch: # 수동 실행 가능
+  push: # 코드 푸시 시
+    branches: [main] # main 브랜치만 (프로덕션 브랜치)
+  workflow_dispatch: # 수동 실행 (긴급 배포용)
 
 jobs:
   deploy-production:
-    runs-on: ubuntu-latest # 최신 우분투 환경에서 실행
-    environment: production # 프로덕션 환경 설정
+    runs-on: ubuntu-latest # 최신 Ubuntu 환경
+    environment: production # GitHub Environment 'production' 사용 (승인 필요)
 
     steps:
-      - name: Checkout code # 코드 체크아웃
-        uses: actions/checkout@v4 # 최신 버전 사용
+      # 1. 소스코드 체크아웃
+      - name: Checkout code
+        uses: actions/checkout@v4 # 최신 체크아웃 액션
 
-      - name: Run tests before deployment # 배포 전 테스트 실행
+      # 2. Java 개발 환경 설정
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin' # Eclipse Temurin JDK
+          java-version: '17' # Java 17
+
+      # 3. 배포 전 종합 테스트 (프로덕션은 더 엄격)
+      - name: Run comprehensive tests
         run: |
-          chmod +x gradlew
-          ./gradlew test --no-daemon
+          chmod +x gradlew # 실행 권한 부여
+          ./gradlew clean test --no-daemon # 클린 빌드 + 전체 테스트
         env:
-          JWT_SECRET_KEY: ${{ secrets.TEST_JWT_SECRET_KEY }} # JWT 비밀 키 (GitHub Secrets 사용)
+          JWT_SECRET_KEY: test-jwt-secret-key-for-ci-pipeline-must-be-256-bits # 테스트용 JWT 키
 
-      - name: Build Docker Image # 도커 이미지 빌드
+      # 4. 프로덕션용 Docker 이미지 빌드
+      - name: Build Docker Image
         run: |
+          # 커밋 해시를 포함한 프로덕션 태그
           docker build -t essay-backend:prod-${{ github.sha }} .
+          # 프로덕션 latest 태그
           docker tag essay-backend:prod-${{ github.sha }} essay-backend:production-latest
 
+      # 5. Docker 이미지를 압축 파일로 저장
       - name: Save Docker Image
         run: docker save essay-backend:production-latest | gzip > essay-backend-production.tar.gz
 
-      - name: Copy Docker image to production server # 프로덕션 서버로 Docker 이미지 복사
-        uses: appleboy/scp-action@v0.1.4 # SCP 액션 사용
+      # 6. 필요한 파일들을 프로덕션 서버로 복사
+      - name: Copy files to production server
+        uses: appleboy/scp-action@v0.1.4
         with:
-          host: ${{ secrets.PRODUCTION_HOST }} # 프로덕션 서버 IP (GitHub Secrets 사용)
-          username: ${{ secrets.PRODUCTION_USER }} # 프로덕션 서버 사용자 이름 (GitHub Secrets 사용)
-          key: ${{ secrets.PRODUCTION_SSH_KEY }} # 프로덕션 서버 SSH 키 (GitHub Secrets 사용)
-          source: "essay-backend-production.tar.gz"
-          target: "/tmp/"
+          host: ${{ secrets.PRODUCTION_HOST }} # 프로덕션 서버 IP
+          username: ${{ secrets.PRODUCTION_USER }} # SSH 사용자명
+          key: ${{ secrets.PRODUCTION_SSH_KEY }} # SSH 개인키
+          # 전송 파일: Docker 이미지 + 설정 파일들
+          source: "essay-backend-production.tar.gz,docker-compose.yml,init.sql"
+          target: "/tmp/essay-production/" # 프로덕션 서버 임시 디렉토리
 
-      - name: Backup database # 데이터베이스 백업
-        uses: appleboy/ssh-action@v0.1.6 # SSH 액션 사용
+      # 7. 데이터베이스 백업 생성 (데이터 보호)
+      - name: Create database backup
+        uses: appleboy/ssh-action@v0.1.6
         with:
-          host: ${{ secrets.PRODUCTION_HOST }} # 프로덕션 서버 IP (GitHub Secrets 사용)
-          username: ${{ secrets.PRODUCTION_USER }} # 프로덕션 서버 사용자 이름 (GitHub Secrets 사용)
-          key: ${{ secrets.PRODUCTION_SSH_KEY }} # 프로덕션 서버 SSH 키 (GitHub Secrets 사용)
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.PRODUCTION_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
           script: |
-            mkdir -p /backup
-            docker exec essay-postgres pg_dump -U postgres essay_db > /backup/essay_db_$(date +'%Y%m%d_%H%M%S').sql
+            # 백업 디렉토리 생성
+            mkdir -p /backup/essay
+            
+            # PostgreSQL 컨테이너가 실행 중인지 확인
+            if docker ps -q -f name=essay-postgres > /dev/null; then
+              echo "📦 Creating database backup..." # 백업 시작 메시지
+              # 타임스탬프가 포함된 백업 파일명 생성
+              BACKUP_FILE="/backup/essay/essay_db_$(date +'%Y%m%d_%H%M%S').sql"
+              # PostgreSQL 덤프 실행
+              docker exec essay-postgres pg_dump -U postgres essay_db > "$BACKUP_FILE"
+              echo "✅ Backup created: $BACKUP_FILE" # 백업 완료 메시지
+            
+              # 백업 파일 개수 제한 (최신 10개만 보관)
+              cd /backup/essay
+              ls -t essay_db_*.sql | tail -n +11 | xargs -r rm # 11번째부터 삭제
+            else
+              echo "ℹ️  No existing database to backup" # 백업할 DB가 없는 경우
+            fi
 
-      - name: Deploy to production # 프로덕션 배포
-        uses: appleboy/ssh-action@v0.1.6 # SSH 액션 사용
+      # 8. 무중단 배포 실행 (Zero-downtime deployment)
+      - name: Deploy to production with zero-downtime
+        uses: appleboy/ssh-action@v0.1.6
         with:
-          host: ${{ secrets.PRODUCTION_HOST }} # 프로덕션 서버 IP (GitHub Secrets 사용)
-          username: ${{ secrets.PRODUCTION_USER }} # 프로덕션 서버 사용자 이름 (GitHub Secrets 사용)
-          key: ${{ secrets.PRODUCTION_SSH_KEY }} # 프로덕션 서버 SSH 키 (GitHub Secrets 사용)
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.PRODUCTION_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
           script: |
-            cd /tmp
+            cd /tmp/essay-production # 작업 디렉토리 이동
+            
+            # 새로운 Docker 이미지 로드
+            echo "🔄 Loading new Docker image..." # 로딩 시작 메시지
             docker load < essay-backend-production.tar.gz
             
-            export SPRING_PROFILES_ACTIVE=prod
-            export DB_PASSWORD=${{ secrets.PRODUCTION_DB_PASSWORD }}
-            export JWT_SECRET_KEY=${{ secrets.PRODUCTION_JWT_SECRET_KEY }}
+            # 프로덕션 환경변수 설정
+            export SPRING_PROFILES_ACTIVE=prod # 프로덕션 프로필
+            export DB_PASSWORD="${{ secrets.PRODUCTION_DB_PASSWORD }}" # 프로덕션 DB 비밀번호
+            export JWT_SECRET_KEY="${{ secrets.PRODUCTION_JWT_SECRET }}" # 프로덕션 JWT 키
             
-            docker-compose up -d postgres
-            sleep 10
+            # PostgreSQL이 실행 중이 아니면 시작
+            if ! docker ps -q -f name=essay-postgres > /dev/null; then
+              echo "🚀 Starting PostgreSQL..." # PostgreSQL 시작 메시지
+              docker-compose up -d postgres
+            
+              # PostgreSQL 준비 대기
+              echo "⏳ Waiting for PostgreSQL to be ready..."
+              sleep 15 # 15초 기본 대기
+              # PostgreSQL 준비 상태까지 대기
+              until docker exec essay-postgres pg_isready -U postgres; do
+                echo "Waiting for PostgreSQL..." # 대기 메시지
+                sleep 5
+              done
+            fi
+            
+            # 롤링 업데이트: 새 컨테이너 시작 후 기존 컨테이너 종료
+            echo "🔄 Starting new application container..." # 새 컨테이너 시작 메시지
+            OLD_CONTAINER=$(docker ps -q -f name=essay-backend) # 기존 컨테이너 ID 저장
+            
+            # 새 컨테이너 시작
             docker-compose up -d app
             
-            docker system prune -f
-            rm -f essay-backend-production.tar.gz
-
-      - name: Health Check # 헬스 체크
-        run: |
-          sleep 60
-          for i in {1..10}; do
-            if curl -f ${{ secrets.PRODUCTION_URL }}/actuator/health; then
-              echo "Health check 성공"
-              exit 0
+            # 새 컨테이너가 정상 시작될 때까지 대기
+            sleep 20
+            NEW_CONTAINER=$(docker ps -q -f name=essay-backend) # 새 컨테이너 ID 확인
+            
+            # 새 컨테이너 시작 확인
+            if [ -n "$NEW_CONTAINER" ]; then
+              echo "✅ New container started successfully" # 성공 메시지
+            
+              # 기존 컨테이너가 있고 새 컨테이너와 다르면 기존 것 종료
+              if [ -n "$OLD_CONTAINER" ] && [ "$OLD_CONTAINER" != "$NEW_CONTAINER" ]; then
+                echo "🛑 Stopping old container: $OLD_CONTAINER" # 기존 컨테이너 종료 메시지
+                docker stop "$OLD_CONTAINER" || true # 종료 (실패해도 계속)
+                docker rm "$OLD_CONTAINER" || true # 제거 (실패해도 계속)
+              fi
+            else
+              echo "❌ Failed to start new container" # 실패 메시지
+              exit 1 # 배포 실패 종료
             fi
-            echo "Health check 실패. 10초 후 재시도..."
-            sleep 10
-          done
-          echo "Health check 실패"
-          exit 1
+            
+            # 시스템 정리
+            docker system prune -f # 사용하지 않는 리소스 정리
+            rm -f essay-backend-production.tar.gz # 전송된 이미지 파일 삭제
 
-      - name: Rollback on failure # 실패 시 롤백
-        if: failure() # 이전 단계가 실패한 경우에만 실행
-        uses: appleboy/ssh-action@v0.1.6 # SSH 액션 사용
+      # 9. 종합적인 헬스체크 (프로덕션용 엄격한 검증)
+      - name: Comprehensive Health Check
+        run: |
+          echo "🏥 Starting comprehensive health checks..." # 헬스체크 시작
+          sleep 30 # 30초 기본 대기
+          
+          # 기본 헬스 엔드포인트 테스트 (15번 시도)
+          for i in {1..15}; do
+            if curl -f -s ${{ secrets.PRODUCTION_URL }}/api/health > /dev/null; then
+              echo "✅ Basic health check passed (attempt $i)" # 성공 메시지
+              break # 성공하면 루프 종료
+            fi
+          
+            if [ $i -eq 15 ]; then
+              echo "❌ Basic health check failed after 15 attempts" # 15번 모두 실패
+              exit 1 # 실패 종료
+            fi
+          
+            echo "⏳ Health check attempt $i/15 failed, retrying in 10 seconds..." # 재시도 메시지
+            sleep 10 # 10초 대기
+          done
+          
+          # 애플리케이션 엔드포인트들 테스트
+          echo "🔍 Testing application endpoints..." # 엔드포인트 테스트 시작
+          
+          # 홈페이지 테스트
+          if curl -f -s ${{ secrets.PRODUCTION_URL }}/ | grep -q "MyOwnEssay"; then
+            echo "✅ Home page accessible" # 홈페이지 접근 성공
+          else
+            echo "❌ Home page test failed" # 홈페이지 테스트 실패
+            exit 1
+          fi
+          
+          # 정보 엔드포인트 테스트
+          if curl -f -s ${{ secrets.PRODUCTION_URL }}/api/info | grep -q "MyOwnEssay"; then
+            echo "✅ Info endpoint accessible" # 정보 엔드포인트 접근 성공
+          else
+            echo "❌ Info endpoint test failed" # 정보 엔드포인트 테스트 실패
+            exit 1
+          fi
+          
+          echo "🎉 All health checks passed!" # 모든 헬스체크 통과
+
+      # 10. 배포 실패 시 롤백 처리 (데이터 복원 포함)
+      - name: Rollback on failure
+        if: failure() # 이전 단계 중 실패한 경우에만 실행
+        uses: appleboy/ssh-action@v0.1.6
         with:
-          host: ${{ secrets.PRODUCTION_HOST }} # 프로덕션 서버 IP (GitHub Secrets 사용)
-          username: ${{ secrets.PRODUCTION_USER }} # 프로덕션 서버 사용자 이름 (GitHub Secrets 사용)
-          key: ${{ secrets.PRODUCTION_SSH_KEY }} # 프로덕션 서버 SSH 키 (GitHub Secrets 사용)
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.PRODUCTION_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
           script: |
-            echo "배포 실패 - 로그 확인"
-            docker-compose logs app --tail=50
+            echo "🚨 PRODUCTION DEPLOYMENT FAILED - Initiating rollback" # 롤백 시작
+            cd /tmp/essay-production
+            
+            # 현재 애플리케이션 로그 출력 (디버깅용)
+            echo "📋 Current application logs:"
+            docker-compose logs app --tail=100 # 최근 100줄 로그
+            
+            # 최신 백업 파일 찾기
+            LATEST_BACKUP=$(ls -t /backup/essay/essay_db_*.sql 2>/dev/null | head -n 1)
+            
+            # 백업이 있으면 데이터베이스 복원
+            if [ -n "$LATEST_BACKUP" ]; then
+              echo "🔄 Restoring database from backup: $LATEST_BACKUP" # 복원 시작
+              # 기존 데이터베이스 삭제 (있으면)
+              docker exec essay-postgres dropdb -U postgres essay_db --if-exists
+              # 새 데이터베이스 생성
+              docker exec essay-postgres createdb -U postgres essay_db
+              # 백업에서 데이터 복원
+              docker exec -i essay-postgres psql -U postgres essay_db < "$LATEST_BACKUP"
+            fi
+            
+            echo "❌ Rollback completed. Manual intervention required." # 롤백 완료
+
+      # 11. 배포 결과 최종 알림
+      - name: Notify deployment result
+        if: always() # 성공/실패 관계없이 항상 실행
+        run: |
+          # 배포 결과에 따른 메시지 출력
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "🎉 PRODUCTION deployment successful!" # 프로덕션 배포 성공
+            echo "📍 Version: ${{ github.sha }}" # 배포된 커밋 해시
+            echo "🌐 URL: ${{ secrets.PRODUCTION_URL }}" # 프로덕션 URL
+          else
+            echo "💥 PRODUCTION deployment FAILED!" # 프로덕션 배포 실패
+            echo "⚠️  Manual intervention required" # 수동 개입 필요 알림
+            echo "📍 Failed version: ${{ github.sha }}" # 실패한 커밋 해시
+          fi

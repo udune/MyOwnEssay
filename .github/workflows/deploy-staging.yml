@@ -41,7 +41,22 @@ jobs:
       - name: Save Docker Image
         run: docker save essay-backend:staging-latest | gzip > essay-backend-staging.tar.gz
 
-      # 6. 필요한 파일들을 스테이징 서버로 복사
+      # 6. 서버 디렉토리 정리 (새로 추가)
+      - name: Clean staging directory
+        uses: appleboy/ssh-action@v0.1.6
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          script: |
+            # 기존 디렉토리 완전 삭제
+            sudo rm -rf /tmp/essay-staging
+            # 새로운 디렉토리 생성
+            mkdir -p /tmp/essay-staging
+            # 권한 설정
+            sudo chown -R $USER:$USER /tmp/essay-staging
+
+      # 7. 필요한 파일들을 스테이징 서버로 복사 (수정됨)
       - name: Copy files to staging server
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -51,8 +66,10 @@ jobs:
           port: 22
           source: essay-backend-staging.tar.gz,docker-compose.yml,init.sql
           target: /tmp/essay-staging/
+          overwrite: true  # 기존 파일 덮어쓰기 허용
+          rm: false        # 기존 파일 삭제하지 않음
 
-      # 7. 스테이징 서버에 배포 실행 (수정됨)
+      # 8. 스테이징 서버에 배포 실행
       - name: Deploy to staging server
         uses: appleboy/ssh-action@v0.1.6
         with:
@@ -63,15 +80,14 @@ jobs:
             cd /tmp/essay-staging
             
             # Docker 그룹에 사용자 추가 (권한 문제 해결)
-            sudo usermod -aG docker $USER
-            newgrp docker || true
+            sudo usermod -aG docker $USER || true
             
             # Docker 서비스 시작 확인
-            sudo systemctl start docker
-            sudo systemctl enable docker
+            sudo systemctl start docker || true
+            sudo systemctl enable docker || true
             
             # Docker 소켓 권한 설정
-            sudo chmod 666 /var/run/docker.sock
+            sudo chmod 666 /var/run/docker.sock || true
             
             # 이미지 로드
             docker load < essay-backend-staging.tar.gz
@@ -84,30 +100,16 @@ jobs:
             # 기존 컨테이너 정리
             docker-compose down --remove-orphans || true
             
-            # PostgreSQL 먼저 시작
-            docker-compose up -d postgres
-            
-            # PostgreSQL 준비 대기
-            sleep 15
-            
-            # PostgreSQL 연결 확인 (sudo 없이 시도)
-            for i in {1..10}; do
-              if docker ps | grep -q postgres && docker exec essay-postgres pg_isready -U postgres; then
-                echo "PostgreSQL is ready"
-                break
-              fi
-              echo "Waiting for PostgreSQL... (attempt $i/10)"
-              sleep 5
-            done
+            # PostgreSQL 먼저 시작 (Google Cloud SQL 사용하므로 생략)
+            # docker-compose up -d postgres
             
             # 애플리케이션 컨테이너 시작
             docker-compose up -d app
             
             # 시스템 정리
             docker system prune -f || true
-            rm -f essay-backend-staging.tar.gz
 
-      # 8. 배포 후 헬스체크 (재시도 로직 포함)
+      # 9. 배포 후 헬스체크 (재시도 로직 포함)
       - name: Health Check with retry
         run: |
           echo "Waiting for application to start..."
@@ -115,17 +117,17 @@ jobs:
           
           for i in {1..10}; do
             if curl -f -s ${{ secrets.STAGING_URL }}/api/health; then
-              echo "✅ Health check passed"
+              echo "Health check passed"
               exit 0
             fi
-            echo "⏳ Attempt $i/10 failed, retrying in 10 seconds..."
+            echo "Attempt $i/10 failed, retrying in 10 seconds..."
             sleep 10
           done
           
-          echo "❌ Health check failed after 10 attempts"
+          echo "Health check failed after 10 attempts"
           exit 1
 
-      # 9. 배포 실패 시 롤백 처리
+      # 10. 배포 실패 시 롤백 처리
       - name: Rollback on failure
         if: failure()
         uses: appleboy/ssh-action@v0.1.6
@@ -134,17 +136,17 @@ jobs:
           username: ${{ secrets.STAGING_USER }}
           key: ${{ secrets.STAGING_SSH_KEY }}
           script: |
-            echo "🔄 Rolling back due to deployment failure..."
+            echo "Rolling back due to deployment failure..."
             cd /tmp/essay-staging
             docker-compose logs app --tail=50 || true
             docker-compose down || true
 
-      # 10. 배포 결과 알림
+      # 11. 배포 결과 알림
       - name: Notify deployment result
         if: always()
         run: |
           if [ "${{ job.status }}" == "success" ]; then
-            echo "🎉 Staging deployment successful: ${{ github.sha }}"
+            echo "Staging deployment successful: ${{ github.sha }}"
           else
-            echo "💥 Staging deployment failed: ${{ github.sha }}"
+            echo "Staging deployment failed: ${{ github.sha }}"
           fi

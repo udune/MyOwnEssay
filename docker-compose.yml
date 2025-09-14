@@ -17,9 +17,8 @@ services:
 
     ports:
       - "8080:8080"
-    networks:
-      - essay-network
+    restart: unless-stopped  # 컨테이너 자동 재시작
 
 networks:
-  essay-network:
-    driver: bridge
+  default:
+    name: essay-network

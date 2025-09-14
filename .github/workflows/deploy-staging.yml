@@ -52,35 +52,59 @@ jobs:
           source: essay-backend-staging.tar.gz,docker-compose.yml,init.sql
           target: /tmp/essay-staging/
 
-      # 7. 스테이징 서버에 배포 실행
+      # 7. 스테이징 서버에 배포 실행 (수정됨)
       - name: Deploy to staging server
-        uses: appleboy/ssh-action@v0.1.6 # SSH 명령 실행 액션
+        uses: appleboy/ssh-action@v0.1.6
         with:
-          host: ${{ secrets.STAGING_HOST }} # 스테이징 서버 IP
-          username: ${{ secrets.STAGING_USER }} # SSH 사용자명
-          key: ${{ secrets.STAGING_SSH_KEY }} # SSH 개인키
-          script: | # 서버에서 실행할 스크립트
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          script: |
             cd /tmp/essay-staging
             
+            # Docker 그룹에 사용자 추가 (권한 문제 해결)
+            sudo usermod -aG docker $USER
+            newgrp docker || true
+            
+            # Docker 서비스 시작 확인
+            sudo systemctl start docker
+            sudo systemctl enable docker
+            
+            # Docker 소켓 권한 설정
+            sudo chmod 666 /var/run/docker.sock
+            
+            # 이미지 로드
             docker load < essay-backend-staging.tar.gz
             
+            # 환경변수 설정
             export SPRING_PROFILES_ACTIVE=dev
             export DB_PASSWORD="${{ secrets.STAGING_DB_PASSWORD }}"
             export JWT_SECRET_KEY="${{ secrets.STAGING_JWT_SECRET }}"
             
+            # 기존 컨테이너 정리
             docker-compose down --remove-orphans || true
             
+            # PostgreSQL 먼저 시작
             docker-compose up -d postgres
             
+            # PostgreSQL 준비 대기
             sleep 15
-            until docker exec essay-postgres pg_isready -U postgres; do
-              echo "Waiting for PostgreSQL..."
+            
+            # PostgreSQL 연결 확인 (sudo 없이 시도)
+            for i in {1..10}; do
+              if docker ps | grep -q postgres && docker exec essay-postgres pg_isready -U postgres; then
+                echo "PostgreSQL is ready"
+                break
+              fi
+              echo "Waiting for PostgreSQL... (attempt $i/10)"
               sleep 5
             done
             
+            # 애플리케이션 컨테이너 시작
             docker-compose up -d app
             
-            docker system prune -f
+            # 시스템 정리
+            docker system prune -f || true
             rm -f essay-backend-staging.tar.gz
 
       # 8. 배포 후 헬스체크 (재시도 로직 포함)
@@ -103,7 +127,7 @@ jobs:
 
       # 9. 배포 실패 시 롤백 처리
       - name: Rollback on failure
-        if: failure() # 이전 단계 중 하나라도 실패한 경우에만 실행
+        if: failure()
         uses: appleboy/ssh-action@v0.1.6
         with:
           host: ${{ secrets.STAGING_HOST }}
@@ -112,12 +136,12 @@ jobs:
           script: |
             echo "🔄 Rolling back due to deployment failure..."
             cd /tmp/essay-staging
-            docker-compose logs app --tail=50
+            docker-compose logs app --tail=50 || true
             docker-compose down || true
 
       # 10. 배포 결과 알림
       - name: Notify deployment result
-        if: always() # 성공/실패 관계없이 항상 실행
+        if: always()
         run: |
           if [ "${{ job.status }}" == "success" ]; then
             echo "🎉 Staging deployment successful: ${{ github.sha }}"

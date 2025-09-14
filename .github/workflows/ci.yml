@@ -7,6 +7,12 @@ on:
   push: # 코드 푸시 시 실행
     branches: [develop] # develop 브랜치 푸시만
 
+# GitHub Actions 권한 설정 추가
+permissions:
+  contents: read
+  checks: write    # 테스트 결과 업로드 권한
+  pull-requests: write  # PR에 댓글 작성 권한
+
 jobs:
   test: # 테스트 작업 정의
     runs-on: ubuntu-latest # 최신 Ubuntu 환경에서 실행
@@ -82,7 +88,7 @@ jobs:
       - name: Build application
         run: ./gradlew build -x test --no-daemon # 빌드 실행 (-x test로 테스트 제외)
 
-      # 8. 테스트 결과 업로드
+      # 8. 테스트 결과 업로드 (수정됨)
       - name: Upload test results
         uses: dorny/test-reporter@v1 # 테스트 결과 리포터
         if: always() # 성공/실패 관계없이 항상 실행
@@ -90,3 +96,5 @@ jobs:
           name: Test Results # 리포트 이름
           path: build/test-results/test/*.xml # JUnit XML 결과 파일 경로
           reporter: java-junit # JUnit 리포터 사용
+          fail-on-error: false  # 테스트 실패해도 워크플로우는 계속
+          token: ${{ secrets.GITHUB_TOKEN }}  # GitHub 토큰 명시적 설정

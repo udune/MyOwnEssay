@@ -43,14 +43,14 @@ jobs:
 
       # 6. 필요한 파일들을 스테이징 서버로 복사
       - name: Copy files to staging server
-        uses: appleboy/scp-action@v0.1.4 # SCP 파일 전송 액션
+        uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.STAGING_HOST }} # 스테이징 서버 IP
-          username: ${{ secrets.STAGING_USER }} # SSH 사용자명
-          key: ${{ secrets.STAGING_SSH_KEY }} # SSH 개인키
-          # 전송할 파일들: Docker 이미지 + Docker Compose 설정 + 데이터베이스 초기화 스크립트
-          source: "essay-backend-staging.tar.gz,docker-compose.yml,init.sql"
-          target: "/tmp/essay-staging/" # 서버의 대상 디렉토리
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          port: 22
+          source: essay-backend-staging.tar.gz,docker-compose.yml,init.sql
+          target: /tmp/essay-staging/
 
       # 7. 스테이징 서버에 배포 실행
       - name: Deploy to staging server

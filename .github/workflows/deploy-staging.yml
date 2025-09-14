@@ -26,17 +26,15 @@ jobs:
       # 3. 배포 전 테스트 실행 (안전성 확보)
       - name: Run tests before deployment
         run: |
-          chmod +x gradlew # 실행 권한 부여
-          ./gradlew test --no-daemon # 테스트 실행
+          chmod +x gradlew
+          ./gradlew test --no-daemon
         env:
           JWT_SECRET_KEY: test-jwt-secret-key-for-ci-pipeline-must-be-256-bits # 테스트용 JWT 키
 
       # 4. Docker 이미지 빌드
       - name: Build Docker Image
         run: |
-          # 커밋 해시를 포함한 태그로 이미지 빌드
           docker build -t essay-backend:staging-${{ github.sha }} .
-          # latest 태그도 함께 생성
           docker tag essay-backend:staging-${{ github.sha }} essay-backend:staging-latest
 
       # 5. Docker 이미지를 파일로 저장 (서버 전송용)
@@ -62,55 +60,46 @@ jobs:
           username: ${{ secrets.STAGING_USER }} # SSH 사용자명
           key: ${{ secrets.STAGING_SSH_KEY }} # SSH 개인키
           script: | # 서버에서 실행할 스크립트
-            cd /tmp/essay-staging # 작업 디렉토리 이동
+            cd /tmp/essay-staging
             
-            # 새로운 Docker 이미지 로드
             docker load < essay-backend-staging.tar.gz
             
-            # 환경변수 설정
-            export SPRING_PROFILES_ACTIVE=dev # 개발 프로필 사용
-            export DB_PASSWORD="${{ secrets.STAGING_DB_PASSWORD }}" # 스테이징 DB 비밀번호
-            export JWT_SECRET_KEY="${{ secrets.STAGING_JWT_SECRET }}" # 스테이징 JWT 키
+            export SPRING_PROFILES_ACTIVE=dev
+            export DB_PASSWORD="${{ secrets.STAGING_DB_PASSWORD }}"
+            export JWT_SECRET_KEY="${{ secrets.STAGING_JWT_SECRET }}"
             
-            # 기존 컨테이너들 정리 (--remove-orphans로 고아 컨테이너도 제거)
-            docker-compose down --remove-orphans || true # 실패해도 계속 진행
+            docker-compose down --remove-orphans || true
             
-            # PostgreSQL 먼저 시작
             docker-compose up -d postgres
             
-            # PostgreSQL 준비 대기 (15초 기본 대기 + 준비 상태 확인)
             sleep 15
             until docker exec essay-postgres pg_isready -U postgres; do
-              echo "Waiting for PostgreSQL..." # PostgreSQL 준비 대기 메시지
-              sleep 5 # 5초마다 재시도
+              echo "Waiting for PostgreSQL..."
+              sleep 5
             done
             
-            # 애플리케이션 컨테이너 시작
             docker-compose up -d app
             
-            # 시스템 정리 (사용하지 않는 이미지/컨테이너 제거)
             docker system prune -f
-            # 전송된 이미지 파일 삭제
             rm -f essay-backend-staging.tar.gz
 
       # 8. 배포 후 헬스체크 (재시도 로직 포함)
       - name: Health Check with retry
         run: |
-          echo "Waiting for application to start..." # 애플리케이션 시작 대기
-          sleep 30 # 30초 기본 대기
+          echo "Waiting for application to start..."
+          sleep 30
           
-          # 10번 시도하여 헬스체크
           for i in {1..10}; do
             if curl -f -s ${{ secrets.STAGING_URL }}/api/health; then
-              echo "✅ Health check passed" # 성공 메시지
-              exit 0 # 성공 종료
+              echo "✅ Health check passed"
+              exit 0
             fi
-            echo "⏳ Attempt $i/10 failed, retrying in 10 seconds..." # 재시도 메시지
-            sleep 10 # 10초 대기 후 재시도
+            echo "⏳ Attempt $i/10 failed, retrying in 10 seconds..."
+            sleep 10
           done
           
-          echo "❌ Health check failed after 10 attempts" # 실패 메시지
-          exit 1 # 실패 종료
+          echo "❌ Health check failed after 10 attempts"
+          exit 1
 
       # 9. 배포 실패 시 롤백 처리
       - name: Rollback on failure
@@ -121,20 +110,17 @@ jobs:
           username: ${{ secrets.STAGING_USER }}
           key: ${{ secrets.STAGING_SSH_KEY }}
           script: |
-            echo "🔄 Rolling back due to deployment failure..." # 롤백 시작 메시지
+            echo "🔄 Rolling back due to deployment failure..."
             cd /tmp/essay-staging
-            # 최근 50줄의 애플리케이션 로그 출력 (디버깅용)
             docker-compose logs app --tail=50
-            # 모든 컨테이너 중단 (실패해도 계속)
             docker-compose down || true
 
       # 10. 배포 결과 알림
       - name: Notify deployment result
         if: always() # 성공/실패 관계없이 항상 실행
         run: |
-          # 작업 상태에 따른 메시지 출력
           if [ "${{ job.status }}" == "success" ]; then
-            echo "🎉 Staging deployment successful: ${{ github.sha }}" # 성공 메시지
+            echo "🎉 Staging deployment successful: ${{ github.sha }}"
           else
-            echo "💥 Staging deployment failed: ${{ github.sha }}" # 실패 메시지
+            echo "💥 Staging deployment failed: ${{ github.sha }}"
           fi

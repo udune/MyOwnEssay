@@ -14,7 +14,7 @@ jobs:
     # PostgreSQL 데이터베이스 서비스 컨테이너 설정
     services:
       postgres:
-        image: postgres:15 # PostgreSQL 15 버전 사용
+        image: postgres:17 # PostgreSQL 17 버전 사용
         env: # 환경변수 설정
           POSTGRES_DB: essay_db # 데이터베이스 이름
           POSTGRES_USER: postgres # 사용자명
@@ -22,10 +22,10 @@ jobs:
         ports:
           - 5432:5432 # 포트 매핑 (호스트:컨테이너)
         options: >- # 헬스체크 옵션
-          --health-cmd pg_isready # PostgreSQL 준비 상태 확인 명령
-          --health-interval 10s # 10초마다 헬스체크
-          --health-timeout 5s # 5초 타임아웃
-          --health-retries 5 # 최대 5번 재시도
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps: # 실행 단계들
       # 1. 소스코드 체크아웃
@@ -44,8 +44,8 @@ jobs:
         uses: actions/cache@v3
         with:
           path: | # 캐시할 경로들
-            ~/.gradle/caches # Gradle 캐시 디렉토리
-            ~/.gradle/wrapper # Gradle Wrapper 캐시
+            ~/.gradle/caches
+            ~/.gradle/wrapper
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           # OS와 Gradle 파일들의 해시값으로 캐시 키 생성
           restore-keys: | # 캐시 복원 키 (부분 일치용)
@@ -58,14 +58,13 @@ jobs:
       # 5. PostgreSQL 준비 상태 대기
       - name: Wait for PostgreSQL
         run: |
-          # 30번 시도하여 PostgreSQL 연결 확인
           for i in {1..30}; do
             if pg_isready -h localhost -p 5432 -U postgres; then
-              echo "PostgreSQL is ready" # 준비 완료 메시지
+              echo "PostgreSQL is ready"
               break
             fi
-            echo "Waiting for PostgreSQL..." # 대기 메시지
-            sleep 2 # 2초 대기
+            echo "Waiting for PostgreSQL..."
+            sleep 2
           done
 
       # 6. 테스트 실행

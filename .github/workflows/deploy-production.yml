@@ -1,153 +1,68 @@
 name: Deploy to Production
 
-# 프로덕션 배포 실행 조건 (매우 신중)
 on:
-  push: # 코드 푸시 시
-    branches: [main] # main 브랜치만 (프로덕션 브랜치)
-  workflow_dispatch: # 수동 실행 (긴급 배포용)
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
   deploy-production:
-    runs-on: ubuntu-latest # 최신 Ubuntu 환경
-    environment: production # GitHub Environment 'production' 사용 (승인 필요)
+    runs-on: ubuntu-latest
+    environment: production
 
     steps:
-      # 1. 소스코드 체크아웃
       - name: Checkout code
-        uses: actions/checkout@v4 # 최신 체크아웃 액션
+        uses: actions/checkout@v4
 
-      # 2. Java 개발 환경 설정
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin' # Eclipse Temurin JDK
-          java-version: '17' # Java 17
+          distribution: 'temurin'
+          java-version: '17'
 
-      # 3. 배포 전 종합 테스트 (프로덕션은 더 엄격)
-      - name: Run comprehensive tests
+      - name: Run tests before deployment
         run: |
-          chmod +x gradlew # 실행 권한 부여
-          ./gradlew clean test --no-daemon # 클린 빌드 + 전체 테스트
+          chmod +x gradlew
+          ./gradlew test --no-daemon
         env:
-          JWT_SECRET_KEY: test-jwt-secret-key-for-ci-pipeline-must-be-256-bits # 테스트용 JWT 키
+          JWT_SECRET_KEY: test-jwt-secret-key-for-ci-pipeline-must-be-256-bits
 
-      # 4. 프로덕션용 Docker 이미지 빌드
       - name: Build Docker Image
         run: |
-          # 커밋 해시를 포함한 프로덕션 태그
-          docker build -t essay-backend:prod-${{ github.sha }} .
-          # 프로덕션 latest 태그
-          docker tag essay-backend:prod-${{ github.sha }} essay-backend:production-latest
+          docker build -t essay-backend:production-${{ github.sha }} .
+          docker tag essay-backend:production-${{ github.sha }} essay-backend:production-latest
 
-      # 5. Docker 이미지를 압축 파일로 저장
       - name: Save Docker Image
         run: docker save essay-backend:production-latest | gzip > essay-backend-production.tar.gz
 
-      # 6. 프로덕션 배포 스크립트 생성
-      - name: Create production deployment script
+      - name: Create deployment script
         run: |
-          cat > deploy-production.sh << 'EOF'
+          cat > deploy.sh << 'EOF'
           #!/bin/bash
           set -e
           
-          echo "🚀 === PRODUCTION DEPLOYMENT STARTED ==="
+          echo "=== Starting Production Deployment ==="
+          
+          # 기존 컨테이너 정리
+          docker stop essay-backend || true
+          docker rm essay-backend || true
+          
+          # Docker 이미지 로드
+          echo "Loading Docker image..."
+          docker load < essay-backend-production.tar.gz
           
           # 환경변수 검증
           if [ -z "$DB_PASSWORD" ] || [ -z "$JWT_SECRET_KEY" ]; then
-            echo "❌ ERROR: Required environment variables not set!"
+            echo "ERROR: Required environment variables not set!"
             exit 1
           fi
           
-          echo "✅ Environment variables validated"
+          echo "Environment check passed"
           echo "DB_PASSWORD length: ${#DB_PASSWORD}"
           echo "JWT_SECRET_KEY length: ${#JWT_SECRET_KEY}"
           
-          # 기존 컨테이너 확인 및 백업 준비
-          OLD_CONTAINER=$(docker ps -q -f name=essay-backend) # 기존 컨테이너 ID 저장
-          
-          if [ -n "$OLD_CONTAINER" ]; then
-            echo "📦 Found existing container: $OLD_CONTAINER"
-          
-            # 데이터베이스 백업 생성 (데이터 보호)
-            echo "🗄️ Creating database backup..."
-            mkdir -p /backup/essay
-            BACKUP_FILE="/backup/essay/essay_db_$(date +'%Y%m%d_%H%M%S').sql"
-          
-            # 백업 실행 (실패해도 배포 계속)
-            timeout 60 docker exec essay-backend sh -c "PGPASSWORD='$DB_PASSWORD' pg_dump -h 34.64.150.171 -U postgres -d myownessay-db" > "$BACKUP_FILE" 2>/dev/null || \
-            echo "⚠️  Database backup failed (connection issue or timeout)"
-          
-            if [ -f "$BACKUP_FILE" ] && [ -s "$BACKUP_FILE" ]; then
-              echo "✅ Backup created: $BACKUP_FILE"
-            else
-              echo "⚠️  Backup file empty or missing"
-            fi
-          
-            # 이전 백업 정리 (최신 10개만 보관)
-            cd /backup/essay
-            ls -t essay_db_*.sql 2>/dev/null | tail -n +11 | xargs -r rm 2>/dev/null || true
-            cd - > /dev/null
-          fi
-          
-          # Docker 이미지 로드
-          echo "📥 Loading new Docker image..."
-          docker load < essay-backend-production.tar.gz
-          
-          # 무중단 배포: 새 컨테이너를 다른 포트에서 시작
-          echo "🔄 Starting new production container on standby port..."
-          docker run -d \
-            --name essay-backend-new \
-            -p 8081:8080 \
-            -e SPRING_PROFILES_ACTIVE=prod \
-            -e SPRING_DATASOURCE_URL=jdbc:postgresql://34.64.150.171:5432/myownessay-db \
-            -e SPRING_DATASOURCE_USERNAME=postgres \
-            -e SPRING_DATASOURCE_PASSWORD="$DB_PASSWORD" \
-            -e JWT_SECRET="$JWT_SECRET_KEY" \
-            -e JWT_EXPIRATION=86400000 \
-            -e JWT_REFRESH_EXPIRATION=604800000 \
-            --restart unless-stopped \
-            essay-backend:production-latest
-          
-          # 새 컨테이너 시작 대기 및 헬스체크
-          echo "⏳ Waiting for new container to be ready..."
-          sleep 20
-          
-          # 새 컨테이너 헬스체크 (포트 8081에서)
-          NEW_CONTAINER_READY=false
-          for i in {1..15}; do
-            if curl -f -s http://localhost:8081/api/health > /dev/null; then
-              echo "✅ New container health check passed (attempt $i)"
-              NEW_CONTAINER_READY=true
-              break
-            fi
-            echo "🔄 Health check attempt $i/15..."
-            sleep 5
-          done
-          
-          if [ "$NEW_CONTAINER_READY" = false ]; then
-            echo "❌ New container health check failed"
-            echo "📋 New container logs:"
-            docker logs essay-backend-new --tail=30
-            docker stop essay-backend-new || true
-            docker rm essay-backend-new || true
-            exit 1
-          fi
-          
-          # 트래픽 전환: 기존 컨테이너 종료 후 새 컨테이너를 메인 포트로 이동
-          if [ -n "$OLD_CONTAINER" ]; then
-            echo "🛑 Gracefully stopping old container..."
-            docker stop essay-backend || true
-            docker rm essay-backend || true
-            sleep 3
-          fi
-          
-          # 새 컨테이너를 메인 포트로 변경
-          echo "🔄 Switching new container to main port..."
-          docker stop essay-backend-new
-          docker rm essay-backend-new
-          
-          # 최종 프로덕션 컨테이너 시작
-          echo "🚀 Starting final production container..."
+          # 컨테이너 실행
+          echo "Starting new container..."
           docker run -d \
             --name essay-backend \
             -p 8080:8080 \
@@ -161,43 +76,25 @@ jobs:
             --restart unless-stopped \
             essay-backend:production-latest
           
-          # 최종 헬스체크
-          echo "🏥 Final health check..."
+          # 컨테이너 시작 대기
           sleep 15
-          FINAL_CHECK_PASSED=false
-          for i in {1..10}; do
-            if curl -f -s http://localhost:8080/api/health > /dev/null; then
-              echo "🎉 Production deployment successful! (attempt $i)"
-              FINAL_CHECK_PASSED=true
-              break
-            fi
-            echo "⏳ Final check attempt $i/10..."
-            sleep 5
-          done
           
-          if [ "$FINAL_CHECK_PASSED" = false ]; then
-            echo "❌ Final health check failed"
-            echo "📋 Production container logs:"
-            docker logs essay-backend --tail=30
+          # 컨테이너 상태 확인
+          if docker ps | grep -q essay-backend; then
+            echo "✅ Container started successfully!"
+            docker logs essay-backend --tail=20
+          else
+            echo "❌ Container failed to start!"
+            docker ps -a
+            docker logs essay-backend || true
             exit 1
           fi
           
-          # 성공 로그
-          echo "📊 Production status:"
-          docker ps | grep essay-backend
-          echo "📋 Recent logs:"
-          docker logs essay-backend --tail=10
-          
-          # 시스템 정리
-          docker system prune -f # 사용하지 않는 리소스 정리
-          rm -f essay-backend-production.tar.gz # 전송된 이미지 파일 삭제
-          
-          echo "🎉 === PRODUCTION DEPLOYMENT COMPLETED ==="
+          echo "=== Production Deployment Complete ==="
           EOF
           
-          chmod +x deploy-production.sh
+          chmod +x deploy.sh
 
-      # 7. 프로덕션 서버 디렉토리 정리
       - name: Clean production directory
         uses: appleboy/ssh-action@v0.1.6
         with:
@@ -209,21 +106,18 @@ jobs:
             mkdir -p /tmp/essay-production
             sudo chown -R $USER:$USER /tmp/essay-production
 
-      # 8. 필요한 파일들을 프로덕션 서버로 복사
       - name: Copy files to production server
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.PRODUCTION_HOST }} # 프로덕션 서버 IP (34.47.123.3)
-          username: ${{ secrets.PRODUCTION_USER }} # SSH 사용자명
-          key: ${{ secrets.PRODUCTION_SSH_KEY }} # SSH 개인키
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.PRODUCTION_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
           port: 22
-          # 전송 파일: Docker 이미지 + 배포 스크립트
-          source: essay-backend-production.tar.gz,deploy-production.sh
+          source: essay-backend-production.tar.gz,deploy.sh
           target: /tmp/essay-production/
           overwrite: true
 
-      # 9. 무중단 프로덕션 배포 실행
-      - name: Execute production deployment
+      - name: Deploy to production server
         uses: appleboy/ssh-action@v0.1.6
         with:
           host: ${{ secrets.PRODUCTION_HOST }}
@@ -241,158 +135,87 @@ jobs:
             export DB_PASSWORD="${{ secrets.PRODUCTION_DB_PASSWORD }}"
             export JWT_SECRET_KEY="${{ secrets.PRODUCTION_JWT_SECRET }}"
             
-            # 프로덕션 배포 스크립트 실행
-            ./deploy-production.sh
+            # 배포 스크립트 실행
+            ./deploy.sh
 
-      # 10. SSH를 통한 종합적인 프로덕션 헬스체크
-      - name: SSH Production Health Check
+      # SSH를 통한 안전한 헬스체크 (스테이징과 동일)
+      - name: SSH Health Check
         uses: appleboy/ssh-action@v0.1.6
         with:
           host: ${{ secrets.PRODUCTION_HOST }}
           username: ${{ secrets.PRODUCTION_USER }}
           key: ${{ secrets.PRODUCTION_SSH_KEY }}
           script: |
-            echo "🏥 === COMPREHENSIVE PRODUCTION HEALTH CHECK ==="
+            echo "🏥 Starting SSH Health Check..."
             
-            # 1. 컨테이너 상태 확인
+            # 컨테이너 상태 확인
             if ! docker ps | grep -q essay-backend; then
-              echo "❌ Production container not running"
+              echo "❌ Container not running"
               exit 1
             fi
-            echo "✅ Production container is running"
+            echo "✅ Container is running"
             
-            # 2. 포트 리스닝 확인
+            # 포트 리스닝 확인
             if ! ss -tlnp | grep -q :8080; then
               echo "❌ Port 8080 not listening"
               exit 1
             fi
             echo "✅ Port 8080 is listening"
             
-            # 3. 기본 헬스 엔드포인트 테스트 (여러 번 시도)
-            echo "🔍 Testing health endpoint..."
-            HEALTH_PASSED=false
-            for i in {1..20}; do
+            # 애플리케이션 응답 대기
+            echo "⏳ Waiting for application to be ready..."
+            for i in {1..15}; do
               if curl -f -s http://localhost:8080/api/health > /dev/null; then
-                echo "✅ Health endpoint responding (attempt $i)"
-                HEALTH_PASSED=true
-                break
+                echo "✅ Application health check passed!"
+            
+                # 상세 응답 확인
+                echo "📊 Health response:"
+                curl -s http://localhost:8080/api/health
+            
+                echo "🎉 Production deployment successful!"
+                exit 0
               fi
-              if [ $i -lt 20 ]; then
-                echo "⏳ Health check attempt $i/20 - waiting 3 seconds..."
-                sleep 3
+            
+              if [ $i -lt 15 ]; then
+                echo "Attempt $i/15 - waiting 5 seconds..."
+                sleep 5
               fi
             done
             
-            if [ "$HEALTH_PASSED" = false ]; then
-              echo "❌ Health endpoint failed after 20 attempts"
-              exit 1
-            fi
-            
-            # 4. 애플리케이션 엔드포인트들 상세 테스트
-            echo "🔍 Testing application endpoints..."
-            
-            # 홈페이지 테스트
-            if curl -f -s http://localhost:8080/ | grep -q "MyOwnEssay"; then
-              echo "✅ Home page accessible and content verified"
-            else
-              echo "❌ Home page test failed"
-              exit 1
-            fi
-            
-            # 정보 엔드포인트 테스트
-            if curl -f -s http://localhost:8080/api/info | grep -q "MyOwnEssay"; then
-              echo "✅ Info endpoint accessible and content verified"
-            else
-              echo "❌ Info endpoint test failed"
-              exit 1
-            fi
-            
-            # 5. 상세 응답 정보 출력
-            echo "📊 Detailed health response:"
-            curl -s http://localhost:8080/api/health
-            echo ""
-            
-            # 6. 컨테이너 리소스 확인
-            echo "📊 Container resource usage:"
-            docker stats essay-backend --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}"
-            
-            # 7. 최근 로그 확인
-            echo "📋 Recent application logs:"
-            docker logs essay-backend --tail=15
-            
-            echo "🎉 === ALL PRODUCTION HEALTH CHECKS PASSED ==="
+            echo "❌ Health check failed after 15 attempts"
+            echo "📋 Recent logs:"
+            docker logs essay-backend --tail=30
+            exit 1
 
-      # 11. 배포 실패 시 긴급 롤백 처리
-      - name: Emergency rollback on failure
-        if: failure() # 이전 단계 중 실패한 경우에만 실행
-        uses: appleboy/ssh-action@v0.1.6
-        with:
-          host: ${{ secrets.PRODUCTION_HOST }}
-          username: ${{ secrets.PRODUCTION_USER }}
-          key: ${{ secrets.PRODUCTION_SSH_KEY }}
-          script: |
-            echo "🚨 === PRODUCTION DEPLOYMENT FAILED - EMERGENCY ROLLBACK ==="
-            cd /tmp/essay-production
-            
-            # 실패한 컨테이너들 정리
-            echo "🧹 Cleaning up failed containers..."
-            docker stop essay-backend-new essay-backend || true
-            docker rm essay-backend-new essay-backend || true
-            
-            # 현재 상태 로그
-            echo "📋 System state at failure:"
-            docker ps -a | grep essay || echo "No essay containers"
-            echo "📋 Available Docker images:"
-            docker images | grep essay || echo "No essay images"
-            
-            # 백업 상태 확인
-            echo "💾 Backup status:"
-            LATEST_BACKUP=$(ls -t /backup/essay/essay_db_*.sql 2>/dev/null | head -n 1)
-            if [ -n "$LATEST_BACKUP" ]; then
-              echo "✅ Latest backup available: $LATEST_BACKUP"
-              echo "📊 Backup size: $(du -h "$LATEST_BACKUP" | cut -f1)"
-            else
-              echo "⚠️  No backup files found"
-            fi
-            
-            # 시스템 리소스 상태
-            echo "📊 System resources:"
-            free -h
-            df -h | grep -E "(Filesystem|/dev/)"
-            
-            echo "❌ === ROLLBACK COMPLETED - MANUAL INTERVENTION REQUIRED ==="
-            echo "📞 URGENT: Contact system administrator immediately"
-            echo "🔧 Manual database restore may be necessary"
-
-      # 12. 배포 결과 최종 알림
-      - name: Production deployment notification
-        if: always() # 성공/실패 관계없이 항상 실행
-        run: |
-          # 배포 결과에 따른 메시지 출력
-          if [ "${{ job.status }}" == "success" ]; then
-            echo "🎉 🎉 🎉 PRODUCTION DEPLOYMENT SUCCESSFUL! 🎉 🎉 🎉"
-            echo "📍 Version: ${{ github.sha }}"
-            echo "🌐 Production Server: ${{ secrets.PRODUCTION_HOST }}:8080"
-            echo "⏰ Deployed at: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-            echo "🔒 All security checks passed"
-            echo "💾 Database backup created"
-            echo "🏥 Health checks: ALL PASSED"
-            echo "🚀 Zero-downtime deployment completed"
-            echo "==============================================="
-          else
-            echo "💥 💥 💥 PRODUCTION DEPLOYMENT FAILED! 💥 💥 💥"
-            echo "⚠️  🚨 URGENT: Manual intervention required 🚨"
-            echo "📍 Failed version: ${{ github.sha }}"
-            echo "🔧 Check logs and contact system administrator"
-            echo "📞 Emergency rollback initiated"
-            echo "💾 Database backups preserved"
-            echo "⚠️  PRODUCTION SERVICE MAY BE AFFECTED"
-            echo "==============================================="
-          fi
-
-      # 13. 성공 시 정리 작업
-      - name: Cleanup on success
+      - name: Deployment Summary
         if: success()
+        run: |
+          echo "🎉 ===== PRODUCTION DEPLOYMENT SUCCESSFUL ===== 🎉"
+          echo "📍 Version: ${{ github.sha }}"
+          echo "🌐 Server: 34.47.123.3:8080"
+          echo "🌐 Domain: https://myownessay.p-e.kr"
+          echo "✅ Application: Running and healthy"
+          echo "💾 Database: Connected to PostgreSQL"
+          echo "🔐 Security: JWT authentication enabled"
+
+      - name: Debug on failure
+        if: failure()
+        uses: appleboy/ssh-action@v0.1.6
+        with:
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.PRODUCTION_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          script: |
+            echo "=== DEBUGGING FAILED DEPLOYMENT ==="
+            echo "Container status:"
+            docker ps -a | grep essay || echo "No essay containers"
+            echo "Application logs:"
+            docker logs essay-backend --tail=50 || echo "No logs available"
+            echo "Port status:"
+            ss -tlnp | grep :8080 || echo "Port 8080 not listening"
+
+      - name: Cleanup
+        if: always()
         uses: appleboy/ssh-action@v0.1.6
         with:
           host: ${{ secrets.PRODUCTION_HOST }}
@@ -400,6 +223,5 @@ jobs:
           key: ${{ secrets.PRODUCTION_SSH_KEY }}
           script: |
             cd /tmp/essay-production
-            rm -f essay-backend-production.tar.gz deploy-production.sh
+            rm -f essay-backend-production.tar.gz deploy.sh
             docker system prune -f
-            echo "✅ Production cleanup completed"

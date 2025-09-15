@@ -1,50 +1,24 @@
 version: '3.8'
 
 services:
-  postgres:
-    image: postgres:15 # PostgreSQL version 15
-    container_name: essay-postgres # 컨테이너 이름 설정
-    environment:
-      POSTGRES_DB: essay_db # 데이터베이스 이름
-      POSTGRES_USER: postgres # 사용자 이름
-      POSTGRES_PASSWORD: ${DB_PASSWORD} # 비밀번호
-    ports:
-      - "5432:5432" # 포트 매핑
-    volumes:
-      - postgres_data:/var/lib/postgresql/data # 데이터 영속성을 위한 볼륨 매핑
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql # 초기화 스크립트 매핑
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d essay_db"] # PostgreSQL 상태 체크 명령어
-      interval: 30s # 30초마다 상태 체크
-      timeout: 5s # 5초 이내에 응답이 없으면 실패로 간주
-      retries: 5 # 최대 5번 재시도
-    networks:
-        - essay-network
-          
   app:
     build: . # Dockerfile로 이미지 빌드
-    container_name: essay-backend # 컨테이너 이름 고정
+    container_name: essay-backend
     environment:
-      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE} # 개발 프로필 사용
-      
-      DB_HOST: postgres # 데이터베이스 호스트
-      DB_NAME: essay_db # 데이터베이스 이름
-      DB_USERNAME: postgres # 데이터베이스 사용자 이름
-      DB_PASSWORD: ${DB_PASSWORD} # 데이터베이스 비밀번호
-      
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY} # JWT 비밀 키
-      
-    ports:
-        - "8080:8080" # 포트 매핑
-    depends_on:
-      postgres:
-        condition: service_healthy # postgres 서비스가 건강할 때까지 대기
-    networks:
-      - essay-network
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
 
-volumes:
-  postgres_data: # PostgreSQL 데이터 영속성을 위한 볼륨
-  
-networks: # 컨테이너 간 통신용 네트워크
-  essay-network:
-    driver: bridge
+      # Google Cloud SQL 연결 정보
+      DB_HOST: 34.64.150.171
+      DB_NAME: myownessay-db
+      DB_USERNAME: postgres
+      DB_PASSWORD: ${DB_PASSWORD}
+
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+
+    ports:
+      - "8080:8080"
+    restart: unless-stopped  # 컨테이너 자동 재시작
+
+networks:
+  default:
+    name: essay-network

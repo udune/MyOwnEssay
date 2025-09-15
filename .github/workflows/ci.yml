@@ -7,6 +7,12 @@ on:
   push: # 코드 푸시 시 실행
     branches: [develop] # develop 브랜치 푸시만
 
+# GitHub Actions 권한 설정 추가
+permissions:
+  contents: read
+  checks: write    # 테스트 결과 업로드 권한
+  pull-requests: write  # PR에 댓글 작성 권한
+
 jobs:
   test: # 테스트 작업 정의
     runs-on: ubuntu-latest # 최신 Ubuntu 환경에서 실행
@@ -14,7 +20,7 @@ jobs:
     # PostgreSQL 데이터베이스 서비스 컨테이너 설정
     services:
       postgres:
-        image: postgres:15 # PostgreSQL 15 버전 사용
+        image: postgres:17 # PostgreSQL 17 버전 사용
         env: # 환경변수 설정
           POSTGRES_DB: essay_db # 데이터베이스 이름
           POSTGRES_USER: postgres # 사용자명
@@ -22,10 +28,10 @@ jobs:
         ports:
           - 5432:5432 # 포트 매핑 (호스트:컨테이너)
         options: >- # 헬스체크 옵션
-          --health-cmd pg_isready # PostgreSQL 준비 상태 확인 명령
-          --health-interval 10s # 10초마다 헬스체크
-          --health-timeout 5s # 5초 타임아웃
-          --health-retries 5 # 최대 5번 재시도
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps: # 실행 단계들
       # 1. 소스코드 체크아웃
@@ -44,8 +50,8 @@ jobs:
         uses: actions/cache@v3
         with:
           path: | # 캐시할 경로들
-            ~/.gradle/caches # Gradle 캐시 디렉토리
-            ~/.gradle/wrapper # Gradle Wrapper 캐시
+            ~/.gradle/caches
+            ~/.gradle/wrapper
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           # OS와 Gradle 파일들의 해시값으로 캐시 키 생성
           restore-keys: | # 캐시 복원 키 (부분 일치용)
@@ -58,14 +64,13 @@ jobs:
       # 5. PostgreSQL 준비 상태 대기
       - name: Wait for PostgreSQL
         run: |
-          # 30번 시도하여 PostgreSQL 연결 확인
           for i in {1..30}; do
             if pg_isready -h localhost -p 5432 -U postgres; then
-              echo "PostgreSQL is ready" # 준비 완료 메시지
+              echo "PostgreSQL is ready"
               break
             fi
-            echo "Waiting for PostgreSQL..." # 대기 메시지
-            sleep 2 # 2초 대기
+            echo "Waiting for PostgreSQL..."
+            sleep 2
           done
 
       # 6. 테스트 실행
@@ -83,7 +88,7 @@ jobs:
       - name: Build application
         run: ./gradlew build -x test --no-daemon # 빌드 실행 (-x test로 테스트 제외)
 
-      # 8. 테스트 결과 업로드
+      # 8. 테스트 결과 업로드 (수정됨)
       - name: Upload test results
         uses: dorny/test-reporter@v1 # 테스트 결과 리포터
         if: always() # 성공/실패 관계없이 항상 실행
@@ -91,3 +96,5 @@ jobs:
           name: Test Results # 리포트 이름
           path: build/test-results/test/*.xml # JUnit XML 결과 파일 경로
           reporter: java-junit # JUnit 리포터 사용
+          fail-on-error: false  # 테스트 실패해도 워크플로우는 계속
+          token: ${{ secrets.GITHUB_TOKEN }}  # GitHub 토큰 명시적 설정

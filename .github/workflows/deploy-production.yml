@@ -81,10 +81,10 @@ jobs:
           
           # 컨테이너 상태 확인
           if docker ps | grep -q essay-backend; then
-            echo "✅ Container started successfully!"
+            echo "Container started successfully!"
             docker logs essay-backend --tail=20
           else
-            echo "❌ Container failed to start!"
+            echo "Container failed to start!"
             docker ps -a
             docker logs essay-backend || true
             exit 1
@@ -95,11 +95,12 @@ jobs:
           
           chmod +x deploy.sh
 
+      # 스테이징과 동일한 방식으로 디렉토리 정리
       - name: Clean production directory
         uses: appleboy/ssh-action@v0.1.6
         with:
-          host: ${{ secrets.PRODUCTION_HOST }}
-          username: ${{ secrets.PRODUCTION_USER }}
+          host: 34.47.123.3
+          username: udune8438
           key: ${{ secrets.PRODUCTION_SSH_KEY }}
           script: |
             sudo rm -rf /tmp/essay-production
@@ -109,8 +110,8 @@ jobs:
       - name: Copy files to production server
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.PRODUCTION_HOST }}
-          username: ${{ secrets.PRODUCTION_USER }}
+          host: 34.47.123.3
+          username: udune8438
           key: ${{ secrets.PRODUCTION_SSH_KEY }}
           port: 22
           source: essay-backend-production.tar.gz,deploy.sh
@@ -120,13 +121,13 @@ jobs:
       - name: Deploy to production server
         uses: appleboy/ssh-action@v0.1.6
         with:
-          host: ${{ secrets.PRODUCTION_HOST }}
-          username: ${{ secrets.PRODUCTION_USER }}
+          host: 34.47.123.3
+          username: udune8438
           key: ${{ secrets.PRODUCTION_SSH_KEY }}
           script: |
             cd /tmp/essay-production
             
-            # Docker 권한 설정
+            # 스테이징과 동일한 Docker 권한 설정
             sudo usermod -aG docker $USER || true
             sudo systemctl start docker || true
             sudo chmod 666 /var/run/docker.sock || true
@@ -138,41 +139,41 @@ jobs:
             # 배포 스크립트 실행
             ./deploy.sh
 
-      # SSH를 통한 안전한 헬스체크 (스테이징과 동일)
+      # 스테이징과 동일한 SSH 헬스체크
       - name: SSH Health Check
         uses: appleboy/ssh-action@v0.1.6
         with:
-          host: ${{ secrets.PRODUCTION_HOST }}
-          username: ${{ secrets.PRODUCTION_USER }}
+          host: 34.47.123.3
+          username: udune8438
           key: ${{ secrets.PRODUCTION_SSH_KEY }}
           script: |
-            echo "🏥 Starting SSH Health Check..."
+            echo "Starting SSH Health Check..."
             
             # 컨테이너 상태 확인
             if ! docker ps | grep -q essay-backend; then
-              echo "❌ Container not running"
+              echo "Container not running"
               exit 1
             fi
-            echo "✅ Container is running"
+            echo "Container is running"
             
             # 포트 리스닝 확인
             if ! ss -tlnp | grep -q :8080; then
-              echo "❌ Port 8080 not listening"
+              echo "Port 8080 not listening"
               exit 1
             fi
-            echo "✅ Port 8080 is listening"
+            echo "Port 8080 is listening"
             
             # 애플리케이션 응답 대기
-            echo "⏳ Waiting for application to be ready..."
+            echo "Waiting for application to be ready..."
             for i in {1..15}; do
               if curl -f -s http://localhost:8080/api/health > /dev/null; then
-                echo "✅ Application health check passed!"
+                echo "Application health check passed!"
             
                 # 상세 응답 확인
-                echo "📊 Health response:"
+                echo "Health response:"
                 curl -s http://localhost:8080/api/health
             
-                echo "🎉 Production deployment successful!"
+                echo "Production deployment successful!"
                 exit 0
               fi
             
@@ -182,28 +183,28 @@ jobs:
               fi
             done
             
-            echo "❌ Health check failed after 15 attempts"
-            echo "📋 Recent logs:"
+            echo "Health check failed after 15 attempts"
+            echo "Recent logs:"
             docker logs essay-backend --tail=30
             exit 1
 
       - name: Deployment Summary
         if: success()
         run: |
-          echo "🎉 ===== PRODUCTION DEPLOYMENT SUCCESSFUL ===== 🎉"
-          echo "📍 Version: ${{ github.sha }}"
-          echo "🌐 Server: 34.47.123.3:8080"
-          echo "🌐 Domain: https://myownessay.p-e.kr"
-          echo "✅ Application: Running and healthy"
-          echo "💾 Database: Connected to PostgreSQL"
-          echo "🔐 Security: JWT authentication enabled"
+          echo "===== PRODUCTION DEPLOYMENT SUCCESSFUL ====="
+          echo "Version: ${{ github.sha }}"
+          echo "Server: 34.47.123.3:8080"
+          echo "Domain: https://myownessay.p-e.kr"
+          echo "Application: Running and healthy"
+          echo "Database: Connected to PostgreSQL"
+          echo "Security: JWT authentication enabled"
 
       - name: Debug on failure
         if: failure()
         uses: appleboy/ssh-action@v0.1.6
         with:
-          host: ${{ secrets.PRODUCTION_HOST }}
-          username: ${{ secrets.PRODUCTION_USER }}
+          host: 34.47.123.3
+          username: udune8438
           key: ${{ secrets.PRODUCTION_SSH_KEY }}
           script: |
             echo "=== DEBUGGING FAILED DEPLOYMENT ==="
@@ -218,8 +219,8 @@ jobs:
         if: always()
         uses: appleboy/ssh-action@v0.1.6
         with:
-          host: ${{ secrets.PRODUCTION_HOST }}
-          username: ${{ secrets.PRODUCTION_USER }}
+          host: 34.47.123.3
+          username: udune8438
           key: ${{ secrets.PRODUCTION_SSH_KEY }}
           script: |
             cd /tmp/essay-production

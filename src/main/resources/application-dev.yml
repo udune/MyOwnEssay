@@ -1,7 +1,7 @@
 spring:
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: update
     show-sql: true
 
     devtools:
@@ -10,10 +10,13 @@ spring:
 
 #JWT Configuration
 jwt:
+  secret: ${JWT_SECRET_KEY:my-dev-secret-key-for-local-development-must-be-256-bits}
   expiration: 3600000
+  refresh-expiration: 7200000
 
 logging:
   level:
     com.example.myownessay: DEBUG
     org.springframework.security: DEBUG
     org.hibernate.SQL: DEBUG
+    org.springframework.web: DEBUG

@@ -10,7 +10,7 @@
 
 - Java 17+
 - Docker & Docker Compose
-- PostgreSQL 15+
+- PostgreSQL 17+
 
 ### 로컬 실행
 
@@ -34,7 +34,7 @@ docker-compose up -d postgres
 
 - **Framework**: Spring Boot 3.5.5
 - **Language**: Java 17
-- **Database**: PostgreSQL 15
+- **Database**: PostgreSQL 17
 - **Authentication**: JWT (Stateless)
 - **AI Integration**: OpenAI GPT-4 API
 - **Build Tool**: Gradle

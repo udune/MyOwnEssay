@@ -266,12 +266,12 @@ docker-compose logs -f app
 
 ### Health Check
 ```bash
-curl http://localhost:8080/actuator/health
+curl https://myownessay.p-e.kr/actuator/health
 ```
 
 ### 메트릭 (Prometheus)
 ```bash
-curl http://localhost:8080/actuator/prometheus
+curl https://myownessay.p-e.kr/actuator/prometheus
 ```
 
 ## 보안 정책
@@ -306,8 +306,8 @@ git push origin main
 
 ## API 문서
 
-- Swagger UI: `http://localhost:8080/swagger-ui.html`
-- OpenAPI 3.0 스펙: `http://localhost:8080/v3/api-docs`
+- Swagger UI: `https://myownessay.p-e.kr/swagger-ui/index.html`
+- OpenAPI 3.0 스펙: `https://myownessay.p-e.kr/v3/api-docs`
 
 ## 기여하기
 

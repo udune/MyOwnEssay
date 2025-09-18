@@ -77,12 +77,8 @@ jobs:
       - name: Run tests
         run: ./gradlew test --no-daemon # Gradle 테스트 실행 (데몬 모드 비활성화)
         env: # 테스트용 환경변수
-          SPRING_PROFILES_ACTIVE: test # Spring 테스트 프로필 활성화
-          DB_HOST: localhost # 데이터베이스 호스트
-          DB_NAME: essay_db # 데이터베이스 이름
-          DB_USERNAME: postgres # 데이터베이스 사용자명
-          DB_PASSWORD: testpassword # 데이터베이스 비밀번호
-          JWT_SECRET_KEY: test-jwt-secret-key-for-ci-pipeline-must-be-256-bits # JWT 테스트 키
+          SPRING_PROFILES_ACTIVE: test
+          JWT_SECRET_KEY: test-jwt-secret-key-for-ci-pipeline-must-be-256-bits
 
       # 7. 애플리케이션 빌드 (테스트 제외)
       - name: Build application

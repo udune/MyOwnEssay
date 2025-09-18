@@ -1,23 +1,25 @@
 # CI/CD 테스트 전용 프로필
 spring:
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:5432/${DB_NAME:essay_db}
-    username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:postgres}
-    driver-class-name: org.postgresql.Driver
-
+    url: jdbc:h2:mem:testdb
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  h2:
+    console:
+      enabled: true
   jpa:
     hibernate:
       ddl-auto: create-drop # 테스트마다 스키마 재생성
-    show-sql: false # CI 환경에서는 SQL 로그 비활성화
+    show-sql: false
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
+        dialect: org.hibernate.dialect.H2Dialect
         format_sql: false
 
 # JWT 테스트 설정
 jwt:
-  secret: ${JWT_SECRET_KEY:test-jwt-secret-key-for-ci-pipeline-must-be-256-bits}
+  secret: test-jwt-secret-key-for-ci-pipeline-must-be-256-bits
   expiration: 3600000 # 1시간
   refresh-expiration: 7200000 # 2시간
 
@@ -28,5 +30,4 @@ logging:
     org.springframework.security: WARN
     org.hibernate.SQL: WARN
     org.springframework.web: WARN
-    org.apache.http: WARN
-    org.springframework.test: WARN
+    root: WARN

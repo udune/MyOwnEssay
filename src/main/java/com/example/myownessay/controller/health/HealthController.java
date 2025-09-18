@@ -68,7 +68,9 @@ public class HealthController {
                 "endpoints", Map.of(
                         "swagger", "/swagger-ui/index.html - API 문서",
                         "health", "/api/health - 서버 상태 확인",
-                        "info", "/api/info - 서비스 정보"
+                        "info", "/api/info - 서비스 정보",
+                        "auth", "/api/auth/* - 인증 관련 API",
+                        "test", "/api/test/* - 테스트 API"
                 ),
                 "contact", Map.of(
                         "github", "https://github.com/udune/MyOwnEssay.git",

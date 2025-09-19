@@ -1,8 +1,8 @@
 package com.example.myownessay.service;
 
-import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
+import com.example.myownessay.common.exception.AuthErrorCode;
+import com.example.myownessay.common.exception.AuthException;
+import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,7 +35,27 @@ public class JwtService {
 
     // JWT에서 사용자 이름(Subject) 추출
     public String extractUsername(String token) {
-        return extractClaim(token, Claims::getSubject);
+        try {
+            return extractClaim(token, Claims::getSubject);
+        } catch (ExpiredJwtException e) {
+            log.warn("만료된 토큰에서 사용자명 추출 시도");
+            throw new AuthException(AuthErrorCode.EXPIRED_TOKEN);
+        } catch (MalformedJwtException e) {
+            log.warn("잘못된 형식의 토큰");
+            throw new AuthException(AuthErrorCode.MALFORMED_TOKEN);
+        } catch (SecurityException e) {
+            log.warn("토큰 서명 검증 실패");
+            throw new AuthException(AuthErrorCode.INVALID_TOKEN);
+        } catch (UnsupportedJwtException e) {
+            log.warn("지원되지 않는 토큰 형식");
+            throw new AuthException(AuthErrorCode.INVALID_TOKEN);
+        } catch (IllegalArgumentException e) {
+            log.warn("빈 토큰 또는 null 토큰");
+            throw new AuthException(AuthErrorCode.TOKEN_NOT_FOUND);
+        } catch (Exception e) {
+            log.error("토큰에서 사용자명 추출 중 예상치 못한 오류: {}", e.getMessage());
+            throw new AuthException(AuthErrorCode.INVALID_TOKEN);
+        }
     }
 
     // JWT에서 특정 클레임 추출
@@ -51,12 +71,22 @@ public class JwtService {
 
     // 추가 클레임을 포함한 액세스 토큰 생성
     public String generateToken(Map<String, Object> extraClaims, String username) {
-        return buildToken(extraClaims, username, jwtExpiration);
+        try {
+            return buildToken(extraClaims, username, jwtExpiration);
+        } catch (Exception e) {
+            log.error("토큰 생성 중 오류 발생: {}", e.getMessage());
+            throw new AuthException(AuthErrorCode.AUTHENTICATION_FAILED, "토큰 생성 중 오류가 발생했습니다.");
+        }
     }
 
     // 리프레시 토큰 생성
     public String generateRefreshToken(String username) {
-        return buildToken(new HashMap<>(), username, refreshExpiration);
+        try {
+            return buildToken(new HashMap<>(), username, refreshExpiration);
+        } catch (Exception e) {
+            log.error("리프레시 토큰 생성 중 오류 발생: {}", e.getMessage());
+            throw new AuthException(AuthErrorCode.AUTHENTICATION_FAILED, "리프레시 토큰 생성 중 오류가 발생했습니다.");
+        }
     }
 
     // 토큰 생성 로직
@@ -80,8 +110,8 @@ public class JwtService {
             log.debug("Token validation for user '{}': {}", username, isValid);
             return isValid;
         } catch (Exception e) {
-            log.warn("Invalid JWT token: {}", e.getMessage());
-            return false;
+            log.warn("토큰 유효성 검사 중 오류 발생: {}", e.getMessage());
+            throw new AuthException(AuthErrorCode.INVALID_TOKEN);
         }
     }
 
@@ -89,9 +119,14 @@ public class JwtService {
     public boolean isTokenExpired(String token) {
         try {
             return extractExpiration(token).before(new Date());
+        } catch (AuthException e) {
+            if (e.getErrorCode() == AuthErrorCode.EXPIRED_TOKEN) {
+                return true; // 만료된 토큰이면 true 반환
+            }
+            throw e;
         } catch (Exception e) {
-            log.warn("JWT token is expired: {}", e.getMessage());
-            return true;
+            log.warn("토큰 만료 여부 확인 중 오류 발생: {}", e.getMessage());
+            throw new AuthException(AuthErrorCode.INVALID_TOKEN);
         }
     }
 
@@ -108,9 +143,34 @@ public class JwtService {
                     .build()
                     .parseClaimsJws(token)
                     .getBody();
+        } catch (ExpiredJwtException e) {
+            log.warn("만료된 토큰으로 클레임 추출 시도");
+            throw new AuthException(AuthErrorCode.EXPIRED_TOKEN);
+        } catch (MalformedJwtException e) {
+            log.warn("잘못된 형식의 토큰으로 클레임 추출 시도");
+            throw new AuthException(AuthErrorCode.MALFORMED_TOKEN);
+        } catch (SecurityException e) {
+            log.warn("토큰 서명이 유효하지 않음");
+            throw new AuthException(AuthErrorCode.INVALID_TOKEN);
+        } catch (UnsupportedJwtException e) {
+            log.warn("지원되지 않는 JWT 토큰");
+            throw new AuthException(AuthErrorCode.INVALID_TOKEN);
+        } catch (IllegalArgumentException e) {
+            log.warn("JWT 토큰이 비어있음");
+            throw new AuthException(AuthErrorCode.TOKEN_NOT_FOUND);
         } catch (Exception e) {
-            log.error("Error extracting claims from token: {}", e.getMessage());
-            throw new RuntimeException("Error extracting claims from token");
+            log.error("토큰 파싱 중 예상치 못한 오류: {}", e.getMessage());
+            throw new AuthException(AuthErrorCode.INVALID_TOKEN);
+        }
+    }
+
+    // 토큰 유효성 검사를 조용히 수행 (예외를 던지지 않고 false 반환)
+    public boolean isTokenValidSilently(String token, String username) {
+        try {
+            return isTokenValid(token, username);
+        } catch (AuthException e) {
+            log.warn("토큰 유효성 검사 실패: {}", e.getMessage());
+            return false;
         }
     }
 }

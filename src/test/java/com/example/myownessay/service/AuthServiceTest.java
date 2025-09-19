@@ -91,7 +91,7 @@ class AuthServiceTest {
             authService.register(registerRequest);
         });
 
-        assertEquals("이미 사용 중인 이메일입니다.", exception.getMessage());
+        assertEquals("이미 존재하는 이메일입니다.", exception.getMessage());
 
         // 이메일 중복 체크 후 더 이상 진행되지 않음을 확인
         verify(userRepository, times(1)).existsByEmail("test@example.com");
@@ -111,7 +111,7 @@ class AuthServiceTest {
             authService.register(registerRequest);
         });
 
-        assertEquals("이미 사용 중인 닉네임입니다.", exception.getMessage());
+        assertEquals("이미 존재하는 닉네임입니다.", exception.getMessage());
 
         verify(userRepository, times(1)).existsByEmail("test@example.com");
         verify(userRepository, times(1)).existsByNickname("테스터");
@@ -156,7 +156,7 @@ class AuthServiceTest {
             authService.login(loginRequest);
         });
 
-        assertEquals("사용자를 찾을 수 없습니다.", exception.getMessage());
+        assertEquals("인증에 실패했습니다. 로그인 중 오류가 발생했습니다.", exception.getMessage());
 
         verify(userRepository, times(1)).findByEmail("test@example.com");
         verify(passwordEncoder, never()).matches(anyString(), anyString());
@@ -174,7 +174,7 @@ class AuthServiceTest {
             authService.login(loginRequest);
         });
 
-        assertEquals("잘못된 비밀번호입니다.", exception.getMessage());
+        assertEquals("인증에 실패했습니다. 로그인 중 오류가 발생했습니다.", exception.getMessage());
 
         verify(userRepository, times(1)).findByEmail("test@example.com");
         verify(passwordEncoder, times(1)).matches("password123", "hashedPassword123");
@@ -210,7 +210,7 @@ class AuthServiceTest {
             authService.getCurrentUser("test@example.com");
         });
 
-        assertEquals("사용자를 찾을 수 없습니다.", exception.getMessage());
+        assertEquals("인증에 실패했습니다. 사용자 정보 조회 중 오류가 발생했습니다.", exception.getMessage());
         verify(userRepository, times(1)).findByEmail("test@example.com");
     }
 }

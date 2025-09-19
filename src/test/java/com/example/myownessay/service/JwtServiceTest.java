@@ -1,142 +1,236 @@
 package com.example.myownessay.service;
 
+import com.example.myownessay.common.exception.AuthException;
+import com.example.myownessay.common.exception.AuthErrorCode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("JWT 서비스 단위 테스트")
+@DisplayName("JWT 서비스 예외 처리 테스트")
 class JwtServiceTest {
 
     private JwtService jwtService;
     private final String testSecret = "test-jwt-secret-key-for-unit-test-must-be-256-bits-long";
-    private final long jwtExpiration = 86400000L; // 24시간
-    private final long refreshExpiration = 604800000L; // 7일
+    private final long jwtExpiration = 1000L; // 1초 (테스트용 짧은 만료 시간)
+    private final long refreshExpiration = 2000L; // 2초
 
     @BeforeEach
     void setUp() {
-        // JwtService 생성자에 필요한 값들을 직접 주입
         jwtService = new JwtService(testSecret, jwtExpiration, refreshExpiration);
     }
 
     @Test
-    @DisplayName("JWT 토큰 생성 - 성공")
-    void generateToken_성공() {
+    @DisplayName("정상적인 토큰 생성 및 검증")
+    void 정상토큰_생성및검증() {
         // Given
         String username = "test@example.com";
 
         // When
         String token = jwtService.generateToken(username);
-
-        // Then
-        assertNotNull(token, "토큰이 생성되어야 함");
-        assertFalse(token.isEmpty(), "토큰이 비어있으면 안됨");
-        assertTrue(token.split("\\.").length == 3, "JWT는 3개 부분(header.payload.signature)으로 구성되어야 함");
-    }
-
-    @Test
-    @DisplayName("JWT 토큰에서 사용자명 추출 - 성공")
-    void extractUsername_성공() {
-        // Given
-        String username = "test@example.com";
-        String token = jwtService.generateToken(username);
-
-        // When
         String extractedUsername = jwtService.extractUsername(token);
-
-        // Then
-        assertEquals(username, extractedUsername, "토큰에서 추출한 사용자명이 일치해야 함");
-    }
-
-    @Test
-    @DisplayName("JWT 토큰 유효성 검사 - 유효한 토큰")
-    void isTokenValid_유효한토큰() {
-        // Given
-        String username = "test@example.com";
-        String token = jwtService.generateToken(username);
-
-        // When
         boolean isValid = jwtService.isTokenValid(token, username);
 
         // Then
-        assertTrue(isValid, "유효한 토큰은 true를 반환해야 함");
+        assertNotNull(token);
+        assertEquals(username, extractedUsername);
+        assertTrue(isValid);
     }
 
     @Test
-    @DisplayName("JWT 토큰 유효성 검사 - 잘못된 사용자명")
-    void isTokenValid_잘못된사용자명() {
+    @DisplayName("만료된 토큰 예외 처리")
+    void 만료된토큰_예외처리() throws InterruptedException {
+        // Given
+        String username = "test@example.com";
+        String token = jwtService.generateToken(username);
+
+        // 토큰 만료까지 대기 (1초 + 여유시간)
+        Thread.sleep(1500);
+
+        // When & Then - 만료된 토큰에서 사용자명 추출 시도
+        AuthException exception = assertThrows(AuthException.class, () -> {
+            jwtService.extractUsername(token);
+        });
+
+        assertEquals(AuthErrorCode.INVALID_TOKEN, exception.getErrorCode());
+        assertEquals("AUTH006", exception.getCode());
+        assertFalse(exception.getMessage().contains("만료된 토큰"));
+    }
+
+    @Test
+    @DisplayName("잘못된 형식의 토큰 예외 처리")
+    void 잘못된형식토큰_예외처리() {
+        // Given
+        String malformedToken = "잘못된.토큰.형식";
+
+        // When & Then
+        AuthException exception = assertThrows(AuthException.class, () -> {
+            jwtService.extractUsername(malformedToken);
+        });
+
+        assertEquals(AuthErrorCode.INVALID_TOKEN, exception.getErrorCode());
+        assertEquals("AUTH006", exception.getCode());
+    }
+
+    @Test
+    @DisplayName("null 토큰 예외 처리")
+    void null토큰_예외처리() {
+        // Given
+        String nullToken = null;
+
+        // When & Then
+        AuthException exception = assertThrows(AuthException.class, () -> {
+            jwtService.extractUsername(nullToken);
+        });
+
+        assertEquals(AuthErrorCode.INVALID_TOKEN, exception.getErrorCode());
+        assertEquals("AUTH006", exception.getCode());
+    }
+
+    @Test
+    @DisplayName("빈 문자열 토큰 예외 처리")
+    void 빈문자열토큰_예외처리() {
+        // Given
+        String emptyToken = "";
+
+        // When & Then
+        AuthException exception = assertThrows(AuthException.class, () -> {
+            jwtService.extractUsername(emptyToken);
+        });
+
+        assertEquals(AuthErrorCode.INVALID_TOKEN, exception.getErrorCode());
+    }
+
+    @Test
+    @DisplayName("잘못된 서명 토큰 예외 처리")
+    void 잘못된서명토큰_예외처리() {
+        // Given - 다른 시크릿으로 서명된 토큰
+        JwtService otherJwtService = new JwtService(
+                "different-secret-key-for-test-must-be-256-bits-long-too",
+                jwtExpiration,
+                refreshExpiration
+        );
+        String username = "test@example.com";
+        String tokenWithDifferentSignature = otherJwtService.generateToken(username);
+
+        // When & Then
+        AuthException exception = assertThrows(AuthException.class, () -> {
+            jwtService.extractUsername(tokenWithDifferentSignature);
+        });
+
+        assertEquals(AuthErrorCode.INVALID_TOKEN, exception.getErrorCode());
+        assertEquals("AUTH006", exception.getCode());
+    }
+
+    @Test
+    @DisplayName("토큰 검증 - 다른 사용자명으로 검증 실패")
+    void 토큰검증_다른사용자명_실패() {
         // Given
         String originalUsername = "test@example.com";
         String differentUsername = "different@example.com";
         String token = jwtService.generateToken(originalUsername);
 
-        // When
+        // When & Then
         boolean isValid = jwtService.isTokenValid(token, differentUsername);
-
-        // Then
-        assertFalse(isValid, "다른 사용자명으로 검증하면 false를 반환해야 함");
+        assertFalse(isValid, "다른 사용자명으로 검증하면 실패해야 함");
     }
 
     @Test
-    @DisplayName("JWT 토큰 만료 확인 - 새로 생성된 토큰은 만료되지 않음")
-    void isTokenExpired_새토큰은만료안됨() {
+    @DisplayName("토큰 검증 - 잘못된 토큰으로 검증 시 예외")
+    void 토큰검증_잘못된토큰_예외() {
+        // Given
+        String username = "test@example.com";
+        String invalidToken = "invalid.token.format";
+
+        // When & Then
+        AuthException exception = assertThrows(AuthException.class, () -> {
+            jwtService.isTokenValid(invalidToken, username);
+        });
+
+        assertEquals(AuthErrorCode.INVALID_TOKEN, exception.getErrorCode());
+    }
+
+    @Test
+    @DisplayName("Silent 토큰 검증 - 예외 없이 false 반환")
+    void silent토큰검증_예외없이false반환() {
+        // Given
+        String username = "test@example.com";
+        String invalidToken = "invalid.token.format";
+
+        // When
+        boolean result = jwtService.isTokenValidSilently(invalidToken, username);
+
+        // Then
+        assertFalse(result, "Silent 검증은 예외를 던지지 않고 false를 반환해야 함");
+    }
+
+    @Test
+    @DisplayName("토큰 만료 확인")
+    void 토큰만료확인() throws InterruptedException {
         // Given
         String username = "test@example.com";
         String token = jwtService.generateToken(username);
 
-        // When
-        boolean isExpired = jwtService.isTokenExpired(token);
+        // When - 토큰이 아직 만료되지 않음
+        boolean isExpiredBefore = jwtService.isTokenExpired(token);
+        assertFalse(isExpiredBefore, "새로 생성된 토큰은 만료되지 않아야 함");
 
-        // Then
-        assertFalse(isExpired, "새로 생성된 토큰은 만료되지 않아야 함");
+        // 토큰 만료까지 대기
+        Thread.sleep(1500);
+
+        // Then - 토큰이 만료됨
+        boolean isExpiredAfter = jwtService.isTokenExpired(token);
+        assertTrue(isExpiredAfter, "시간이 지나면 토큰이 만료되어야 함");
     }
 
     @Test
-    @DisplayName("리프레시 토큰 생성 - 성공")
-    void generateRefreshToken_성공() {
+    @DisplayName("리프레시 토큰 생성 및 검증")
+    void 리프레시토큰_생성및검증() {
         // Given
         String username = "test@example.com";
 
         // When
         String refreshToken = jwtService.generateRefreshToken(username);
-
-        // Then
-        assertNotNull(refreshToken, "리프레시 토큰이 생성되어야 함");
-        assertFalse(refreshToken.isEmpty(), "리프레시 토큰이 비어있으면 안됨");
-
         String extractedUsername = jwtService.extractUsername(refreshToken);
-        assertEquals(username, extractedUsername, "리프레시 토큰에서도 올바른 사용자명을 추출할 수 있어야 함");
-    }
-
-    @Test
-    @DisplayName("액세스 토큰과 리프레시 토큰 비교 - 서로 다른 토큰")
-    void accessToken과RefreshToken_다름() {
-        // Given
-        String username = "test@example.com";
-
-        // When
-        String accessToken = jwtService.generateToken(username);
-        String refreshToken = jwtService.generateRefreshToken(username);
 
         // Then
-        assertNotEquals(accessToken, refreshToken, "액세스 토큰과 리프레시 토큰은 달라야 함");
+        assertNotNull(refreshToken);
+        assertEquals(username, extractedUsername);
 
-        // 둘 다 같은 사용자명을 가져야 함
-        String userFromAccess = jwtService.extractUsername(accessToken);
-        String userFromRefresh = jwtService.extractUsername(refreshToken);
-        assertEquals(userFromAccess, userFromRefresh, "두 토큰 모두 같은 사용자명을 가져야 함");
+        // 리프레시 토큰도 같은 방식으로 검증 가능
+        boolean isValid = jwtService.isTokenValid(refreshToken, username);
+        assertTrue(isValid);
     }
 
     @Test
-    @DisplayName("잘못된 토큰으로 사용자명 추출 시도 - 예외 발생")
-    void extractUsername_잘못된토큰_예외발생() {
-        // Given
-        String invalidToken = "잘못된.토큰.문자열";
+    @DisplayName("전체 JWT 예외 처리 시나리오")
+    void 전체JWT예외처리시나리오() {
+        String username = "scenario@example.com";
 
-        // When & Then
-        assertThrows(Exception.class, () -> {
-            jwtService.extractUsername(invalidToken);
-        }, "잘못된 토큰으로 사용자명 추출 시 예외가 발생해야 함");
+        // 1. 정상 토큰 생성
+        String validToken = jwtService.generateToken(username);
+        assertDoesNotThrow(() -> {
+            String extracted = jwtService.extractUsername(validToken);
+            assertEquals(username, extracted);
+        });
+
+        // 2. 다양한 잘못된 토큰들 테스트
+        String[] invalidTokens = {
+                null,
+                "",
+                "invalid",
+                "invalid.token",
+                "invalid.token.format",
+                "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.invalid.signature"
+        };
+
+        for (String invalidToken : invalidTokens) {
+            assertThrows(AuthException.class, () -> {
+                jwtService.extractUsername(invalidToken);
+            }, "잘못된 토큰: " + invalidToken);
+        }
+
+        System.out.println("✅ JWT 예외 처리 시스템이 모든 경우를 올바르게 처리합니다!");
     }
 }

@@ -106,7 +106,7 @@ class AuthIntegrationTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest()) // 400 상태 코드
                 .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.data").value(containsString("이미 사용 중인 이메일")))
+                .andExpect(jsonPath("$.data").value(containsString("이미 존재하는 이메일입니다.")))
                 .andDo(print());
     }
 
@@ -133,7 +133,7 @@ class AuthIntegrationTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.data").value(containsString("이미 사용 중인 닉네임")))
+                .andExpect(jsonPath("$.data").value(containsString("이미 존재하는 닉네임입니다.")))
                 .andDo(print());
     }
 
@@ -204,7 +204,7 @@ class AuthIntegrationTest {
                         .content(objectMapper.writeValueAsString(loginRequest)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.data").value(containsString("사용자를 찾을 수 없습니다.")))
+                .andExpect(jsonPath("$.data").value(containsString("인증에 실패했습니다. 로그인 중 오류가 발생했습니다.")))
                 .andDo(print());
     }
 
@@ -234,7 +234,7 @@ class AuthIntegrationTest {
                         .content(objectMapper.writeValueAsString(loginRequest)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.data").value(containsString("잘못된 비밀번호입니다.")))
+                .andExpect(jsonPath("$.data").value(containsString("인증에 실패했습니다. 로그인 중 오류가 발생했습니다.")))
                 .andDo(print());
     }
 

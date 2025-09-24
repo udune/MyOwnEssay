@@ -3,14 +3,16 @@ package com.example.myownessay.service;
 import com.example.myownessay.common.exception.AuthErrorCode;
 import com.example.myownessay.common.exception.AuthException;
 import com.example.myownessay.dto.auth.UserInfo;
+import com.example.myownessay.dto.auth.request.DeleteAccountRequest;
 import com.example.myownessay.dto.auth.request.LoginRequest;
 import com.example.myownessay.dto.auth.request.RegisterRequest;
+import com.example.myownessay.dto.auth.request.UpdateProfileRequest;
+import com.example.myownessay.dto.auth.response.ProfileResponse;
 import com.example.myownessay.dto.auth.response.TokenResponse;
 import com.example.myownessay.entity.User;
 import com.example.myownessay.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -125,6 +127,90 @@ public class AuthService {
             log.error("사용자 정보 조회 중 오류 발생: {} - {}", email, e.getMessage());
             throw new AuthException(AuthErrorCode.AUTHENTICATION_FAILED, "사용자 정보 조회 중 오류가 발생했습니다.");
         }
+    }
+
+    // 프로필 조회
+    @Transactional(readOnly = true)
+    public ProfileResponse getProfile(String email) {
+        log.info("프로필 조회 시도: {}", email);
+
+        // 사용자 조회
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> {
+                    log.warn("존재하지 않는 이메일로 프로필 조회 시도: {}", email);
+                    return new AuthException(AuthErrorCode.USER_NOT_FOUND);
+                });
+
+        // 계정 활성화 여부 확인
+        return new ProfileResponse(
+                user.getId(),
+                user.getEmail(),
+                user.getNickname(),
+                user.getTimezone(),
+                user.getCreatedAt(),
+                user.getUpdatedAt()
+        );
+    }
+
+    // 프로필 수정
+    @Transactional
+    public ProfileResponse updateProfile(String email, UpdateProfileRequest request) {
+        log.info("프로필 수정 시도: {}", email);
+
+        // 사용자 조회
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> {
+                    log.warn("존재하지 않는 이메일로 프로필 수정 시도: {}", email);
+                    return new AuthException(AuthErrorCode.USER_NOT_FOUND);
+                });
+
+        // 닉네임 변경
+        if (request.getNickname() != null && !request.getNickname().equals(user.getNickname())) {
+            if (userRepository.existsByNickname(request.getNickname())) {
+                log.warn("이미 사용 중인 닉네임으로 프로필 수정 시도: {}", request.getNickname());
+                throw new AuthException(AuthErrorCode.NICKNAME_ALREADY_EXISTS);
+            }
+            user.setNickname(request.getNickname());
+        }
+
+        // 시간대 변경
+        if (request.getTimezone() != null) {
+            user.setTimezone(request.getTimezone());
+        }
+
+        // 변경된 사용자 정보 저장
+        User updatedUser = userRepository.save(user);
+        log.info("프로필 수정 성공: {}", updatedUser.getId());
+
+        return new ProfileResponse(
+                updatedUser.getId(),
+                updatedUser.getEmail(),
+                updatedUser.getNickname(),
+                updatedUser.getTimezone(),
+                updatedUser.getCreatedAt(),
+                updatedUser.getUpdatedAt()
+        );
+    }
+
+    // 회원 탈퇴
+    @Transactional
+    public void deleteAccount(String email, DeleteAccountRequest request) {
+        log.info("회원 탈퇴 시도: {}", email);
+
+        // 사용자 조회
+        User user = userRepository.findByEmail(email).orElseThrow(() -> {
+            log.warn("존재하지 않는 이메일로 회원 탈퇴 시도: {}", email);
+            return new AuthException(AuthErrorCode.USER_NOT_FOUND);
+        });
+
+        // 비밀번호 검증
+        if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+            log.warn("잘못된 비밀번호로 회원 탈퇴 시도: {}", email);
+            throw new AuthException(AuthErrorCode.INVALID_PASSWORD);
+        }
+
+        userRepository.delete(user); // 실제 삭제
+        log.info("회원 탈퇴 성공: {}", user.getId());
     }
 
     // User 엔티티를 UserInfo DTO로 매핑

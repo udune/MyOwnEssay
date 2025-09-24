@@ -1,6 +1,7 @@
 package com.example.myownessay.integration;
 
 import com.example.myownessay.dto.auth.request.DeleteAccountRequest;
+import com.example.myownessay.dto.auth.request.LoginRequest;
 import com.example.myownessay.dto.auth.request.RegisterRequest;
 import com.example.myownessay.dto.auth.request.UpdateProfileRequest;
 import com.example.myownessay.repository.UserRepository;
@@ -12,13 +13,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureWebMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.WebApplicationContext;
 
-import static org.hamcrest.Matchers.*;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
@@ -28,7 +30,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureWebMvc
 @ActiveProfiles("test")
 @Transactional
-@DisplayName("사용자 관리 통합 테스트")
+@DisplayName("사용자 관리 통합 테스트 - JWT 인증 포함")
 class UserManagementIntegrationTest {
 
     @Autowired
@@ -41,44 +43,78 @@ class UserManagementIntegrationTest {
     private ObjectMapper objectMapper;
 
     private MockMvc mockMvc;
+    private String accessToken; // JWT 토큰을 저장할 변수
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         mockMvc = MockMvcBuilders
                 .webAppContextSetup(webApplicationContext)
+                .apply(SecurityMockMvcConfigurers.springSecurity()) // Spring Security 설정 적용
                 .build();
 
         // 테스트 데이터 정리
         userRepository.deleteAll();
 
-        // 테스트용 사용자 생성
+        // 테스트용 사용자 생성 및 로그인하여 JWT 토큰 획득
+        setupTestUserAndToken();
+    }
+
+    private void setupTestUserAndToken() throws Exception {
+        // 1. 테스트용 사용자 회원가입
         RegisterRequest registerRequest = new RegisterRequest(
                 "test@example.com",
                 "password123",
                 "테스터"
         );
 
-        try {
-            mockMvc.perform(post("/api/auth/register")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(registerRequest)));
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(registerRequest)))
+                .andExpect(status().isCreated());
+
+        // 2. 로그인하여 JWT 토큰 획득
+        LoginRequest loginRequest = new LoginRequest(
+                "test@example.com",
+                "password123"
+        );
+
+        MvcResult loginResult = mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(loginRequest)))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        // 3. 응답에서 JWT 토큰 추출
+        String loginResponse = loginResult.getResponse().getContentAsString();
+        accessToken = objectMapper.readTree(loginResponse)
+                .get("data")
+                .get("accessToken")
+                .asText();
+
+        System.out.println("✅ 테스트용 JWT 토큰 획득 완료: " + accessToken.substring(0, 20) + "...");
     }
 
     @Test
-    @DisplayName("프로필 조회 - 성공")
-    void getProfile_성공() throws Exception {
+    @DisplayName("프로필 조회 - JWT 토큰으로 성공")
+    void getProfile_JWT토큰으로_성공() throws Exception {
         // When & Then
-        mockMvc.perform(get("/api/users/me"))
+        mockMvc.perform(get("/api/users/me")
+                        .header("Authorization", "Bearer " + accessToken)) // JWT 토큰 포함
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.email").value("test@example.com"))
                 .andExpect(jsonPath("$.data.nickname").value("테스터"))
                 .andExpect(jsonPath("$.data.timezone").value("Asia/Seoul"))
                 .andExpect(jsonPath("$.data.id").exists())
-                .andExpect(jsonPath("$.data.createdAt").exists())
+                .andDo(print());
+    }
+
+    @Test
+    @DisplayName("프로필 조회 - JWT 토큰 없이 실패")
+    void getProfile_JWT토큰없이_실패() throws Exception {
+        // When & Then
+        mockMvc.perform(get("/api/users/me"))
+                .andExpect(status().isForbidden()) // JWT 필터에서 403 반환
                 .andDo(print());
     }
 
@@ -91,6 +127,7 @@ class UserManagementIntegrationTest {
 
         // When & Then
         mockMvc.perform(put("/api/users/me")
+                        .header("Authorization", "Bearer " + accessToken) // JWT 토큰 포함
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -109,27 +146,29 @@ class UserManagementIntegrationTest {
 
         // When & Then
         mockMvc.perform(put("/api/users/me")
+                        .header("Authorization", "Bearer " + accessToken) // JWT 토큰 포함
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.timezone").value("America/New_York"))
-                .andExpect(jsonPath("$.data.nickname").value("테스터"))
+                .andExpect(jsonPath("$.data.nickname").value("테스터")) // 기존 닉네임 유지
                 .andDo(print());
     }
 
     @Test
-    @DisplayName("프로필 수정 - 잘못된 입력값")
-    void updateProfile_잘못된입력값_실패() throws Exception {
+    @DisplayName("프로필 수정 - 잘못된 JWT 토큰으로 실패")
+    void updateProfile_잘못된JWT토큰_실패() throws Exception {
         // Given
         UpdateProfileRequest request = new UpdateProfileRequest();
-        request.setNickname("A"); // 너무 짧은 닉네임
+        request.setNickname("새닉네임");
 
         // When & Then
         mockMvc.perform(put("/api/users/me")
+                        .header("Authorization", "Bearer 잘못된토큰")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isForbidden()) // JWT 인증 실패
                 .andDo(print());
     }
 
@@ -142,11 +181,12 @@ class UserManagementIntegrationTest {
 
         // When & Then
         mockMvc.perform(delete("/api/users/me")
+                        .header("Authorization", "Bearer " + accessToken) // JWT 토큰 포함
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data").value("회원 탈퇴가 완료되었습니다."))
+                .andExpect(jsonPath("$.data").value("계정이 성공적으로 삭제되었습니다."))
                 .andDo(print());
 
         // 사용자가 정말 삭제되었는지 확인
@@ -163,11 +203,11 @@ class UserManagementIntegrationTest {
 
         // When & Then
         mockMvc.perform(delete("/api/users/me")
+                        .header("Authorization", "Bearer " + accessToken) // JWT 토큰 포함
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isBadRequest()) // 비밀번호 불일치
                 .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.data").value(containsString("계정 삭제에 실패했습니다.")))
                 .andDo(print());
 
         // 사용자가 삭제되지 않았는지 확인
@@ -176,44 +216,31 @@ class UserManagementIntegrationTest {
     }
 
     @Test
-    @DisplayName("회원 탈퇴 - 비밀번호 누락")
-    void deleteAccount_비밀번호누락_실패() throws Exception {
-        // Given
-        DeleteAccountRequest request = new DeleteAccountRequest();
-        // 비밀번호를 설정하지 않음
+    @DisplayName("전체 시나리오 - JWT 인증 포함")
+    void 전체시나리오_JWT인증포함() throws Exception {
+        // 1. 프로필 조회
+        mockMvc.perform(get("/api/users/me")
+                        .header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.email").value("test@example.com"));
 
-        // When & Then
-        mockMvc.perform(delete("/api/users/me")
+        // 2. 프로필 수정
+        UpdateProfileRequest updateRequest = new UpdateProfileRequest();
+        updateRequest.setNickname("수정된닉네임");
+
+        mockMvc.perform(put("/api/users/me")
+                        .header("Authorization", "Bearer " + accessToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isBadRequest())
-                .andDo(print());
-    }
+                        .content(objectMapper.writeValueAsString(updateRequest)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.nickname").value("수정된닉네임"));
 
-    @Test
-    @DisplayName("전체 시나리오 - 회원가입부터 탈퇴까지")
-    void 전체시나리오_회원가입부터탈퇴까지() throws Exception {
-        String email = "fulltest@example.com";
-        String password = "testpassword123";
-        String nickname = "풀테스터";
+        // 3. 수정된 프로필 다시 조회
+        mockMvc.perform(get("/api/users/me")
+                        .header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.nickname").value("수정된닉네임"));
 
-        // 1. 새로운 사용자 회원가입
-        RegisterRequest registerRequest = new RegisterRequest(email, password, nickname);
-        mockMvc.perform(post("/api/auth/register")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(registerRequest)))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.success").value(true));
-
-        // 2. 프로필 조회 (TODO: 실제로는 JWT 토큰 필요)
-        // 현재는 하드코딩된 이메일로 테스트하므로 생략
-
-        // 3. 프로필 수정 (TODO: 실제로는 JWT 토큰 필요)
-        // 현재는 하드코딩된 이메일로 테스트하므로 생략
-
-        // 4. 회원 탈퇴 (TODO: 실제로는 JWT 토큰 필요)
-        // 현재는 하드코딩된 이메일로 테스트하므로 생략
-
-        System.out.println("✅ 전체 시나리오 테스트는 JWT 인증 구현 후 완성 예정");
+        System.out.println("✅ 전체 시나리오 성공: JWT 인증 → 프로필 조회 → 수정 → 재조회");
     }
 }

@@ -11,7 +11,9 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -30,10 +32,22 @@ public class UserController {
             description = "현재 인증된 사용자의 프로필 정보를 조회합니다."
     )
     @GetMapping("/me")
-    public ResponseEntity<ApiResponse<?>> getMyProfile() {
+    public ResponseEntity<ApiResponse<?>> getMyProfile(Authentication authentication) {
+        log.info("프로필 조회 요청");
+
+        if (authentication == null) {
+            log.error("인증 정보가 없습니다.");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error("인증이 필요합니다."));
+        }
+
         try {
-            String email = "";
+            String email = authentication.getName();
+            log.info("프로필 조회 - 사용자 이메일: {}", email);
+
             ProfileResponse profile = authService.getProfile(email);
+
+            log.info("프로필 조회 성공: {}", profile.getNickname());
             return ResponseEntity.ok(ApiResponse.success(profile));
         } catch (Exception e) {
             log.error("사용자 정보 조회 실패: {}", e.getMessage());
@@ -49,11 +63,23 @@ public class UserController {
     )
     @PutMapping("/me")
     public ResponseEntity<ApiResponse<?>> updateMyProfile(
-            @Valid @RequestBody UpdateProfileRequest request
+            @Valid @RequestBody UpdateProfileRequest request,
+            Authentication authentication
             ) {
+        log.info("프로필 업데이트 요청");
+
+        if (authentication == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error("인증이 필요합니다."));
+        }
+
         try {
-            String email = "";
+            String email = authentication.getName();
+            log.info("프로필 업데이트 - 사용자 이메일: {}", email);
+
             ProfileResponse profile = authService.updateProfile(email, request);
+
+            log.info("프로필 업데이트 성공: {}", profile.getNickname());
             return ResponseEntity.ok(ApiResponse.success(profile));
         } catch (Exception e) {
             log.error("프로필 업데이트 실패: {}", e.getMessage());
@@ -69,10 +95,20 @@ public class UserController {
     )
     @DeleteMapping("/me")
     public ResponseEntity<ApiResponse<?>> deleteMyAccount(
-            @Valid @RequestBody DeleteAccountRequest request
+            @Valid @RequestBody DeleteAccountRequest request,
+            Authentication authentication
             ) {
+        log.info("계정 삭제 요청");
+
+        if (authentication == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error("인증이 필요합니다."));
+        }
+
         try {
-            String email = "";
+            String email = authentication.getName();
+            log.info("계정 삭제 - 사용자 이메일: {}", email);
+
             authService.deleteAccount(email, request);
             return ResponseEntity.ok(ApiResponse.success("계정이 성공적으로 삭제되었습니다."));
         } catch (Exception e) {

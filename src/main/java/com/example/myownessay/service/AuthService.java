@@ -141,6 +141,11 @@ public class AuthService {
                     return new AuthException(AuthErrorCode.USER_NOT_FOUND);
                 });
 
+        if (!user.getIsActive()) {
+            log.warn("비활성화된 계정으로 프로필 조회 시도: {}", email);
+            throw new AuthException(AuthErrorCode.ACCOUNT_DISABLED);
+        }
+
         // 계정 활성화 여부 확인
         return new ProfileResponse(
                 user.getId(),
@@ -165,16 +170,19 @@ public class AuthService {
                 });
 
         // 닉네임 변경
-        if (request.getNickname() != null && !request.getNickname().equals(user.getNickname())) {
+        if (request.getNickname() != null &&
+                !request.getNickname().trim().isEmpty() &&
+                !request.getNickname().equals(user.getNickname())) {
             if (userRepository.existsByNickname(request.getNickname())) {
                 log.warn("이미 사용 중인 닉네임으로 프로필 수정 시도: {}", request.getNickname());
                 throw new AuthException(AuthErrorCode.NICKNAME_ALREADY_EXISTS);
             }
             user.setNickname(request.getNickname());
+            log.info("닉네임 변경: {} -> {}", user.getNickname(), request.getNickname());
         }
 
         // 시간대 변경
-        if (request.getTimezone() != null) {
+        if (request.getTimezone() != null && !request.getTimezone().trim().isEmpty()) {
             user.setTimezone(request.getTimezone());
         }
 

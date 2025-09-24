@@ -22,6 +22,9 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http, JwtAuthenticationFilter jwtAuthenticationFilter) throws Exception {
         http
             .csrf(csrf -> csrf.disable()) // CSRF 비활성화 (API 서버이므로 필요에 따라 설정)
+            .headers(headers -> headers
+                .frameOptions(frame -> frame.sameOrigin()) // H2 Console iframe 허용
+            )
             .sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS) // 세션 사용 안함
             )
@@ -38,7 +41,8 @@ public class SecurityConfig {
                         "/swagger-ui.html", // Swagger UI 엔드포인트
                         "/v3/api-docs/**", // OpenAPI 3 관련 엔드포인트
                         "/swagger-resources/**", // Swagger 관련 엔드포인트
-                        "/webjars/**" // Swagger UI 관련 엔드포인트
+                        "/webjars/**", // Swagger UI 관련 엔드포인트
+                        "/h2-console/**" // H2 Console (개발 환경용)
                 ).permitAll() // 인증 관련 엔드포인트는 모두 허용
                     .anyRequest().authenticated() // 그 외의 요청은 인증 필요
             ).addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class); // JWT 인증 필터를 UsernamePasswordAuthenticationFilter 전에 추가

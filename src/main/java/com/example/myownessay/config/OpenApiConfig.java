@@ -54,7 +54,7 @@ public class OpenApiConfig {
                 )
                 .servers(List.of(
                         new Server()
-                                .url("http://localhost:8080")
+                                .url("http://localhost:8081")
                                 .description("로컬 개발 서버"),
                         new Server()
                                 .url("https://devmyownessay.p-e.kr")

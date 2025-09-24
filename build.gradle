@@ -36,6 +36,7 @@ dependencies {
 
 	// Database
 	runtimeOnly 'org.postgresql:postgresql'
+	runtimeOnly 'org.h2database:h2'
 
 	// Development tools
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'

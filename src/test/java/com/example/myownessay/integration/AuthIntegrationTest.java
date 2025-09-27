@@ -252,7 +252,7 @@ class AuthIntegrationTest {
         // 1. 회원가입
         RegisterRequest request = new RegisterRequest(
                 "test@example.com",
-                "plainpassword",
+                "plainpassword1",
                 "테스터"
         );
 
@@ -265,7 +265,7 @@ class AuthIntegrationTest {
         assertNotNull(savedUser);
 
         // 3. 비밀번호가 평문이 아닌 암호화된 형태로 저장되었는지 확인
-        assertNotEquals("plainpassword", savedUser.getPasswordHash(), "비밀번호가 평문으로 저장되면 안됨");
+        assertNotEquals("plainpassword1", savedUser.getPasswordHash(), "비밀번호가 평문으로 저장되면 안됨");
         assertTrue(savedUser.getPasswordHash().startsWith("$2a$"), "BCrypt 암호화 형식이어야 함");
         assertTrue(savedUser.getPasswordHash().length() > 50, "암호화된 비밀번호는 충분히 길어야 함");
     }

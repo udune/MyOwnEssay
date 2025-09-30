@@ -13,8 +13,8 @@ class JwtServiceTest {
 
     private JwtService jwtService;
     private final String testSecret = "test-jwt-secret-key-for-unit-test-must-be-256-bits-long";
-    private final long jwtExpiration = 1000L; // 1초 (테스트용 짧은 만료 시간)
-    private final long refreshExpiration = 2000L; // 2초
+    private final long jwtExpiration = 5000L; // 5초 (테스트용 충분한 만료 시간)
+    private final long refreshExpiration = 10000L; // 10초
 
     @BeforeEach
     void setUp() {
@@ -45,8 +45,8 @@ class JwtServiceTest {
         String username = "test@example.com";
         String token = jwtService.generateToken(username);
 
-        // 토큰 만료까지 대기 (1초 + 여유시간)
-        Thread.sleep(1500);
+        // 토큰 만료까지 대기 (5초 + 여유시간)
+        Thread.sleep(6000);
 
         // When & Then - 만료된 토큰에서 사용자명 추출 시도
         AuthException exception = assertThrows(AuthException.class, () -> {
@@ -177,7 +177,7 @@ class JwtServiceTest {
         assertFalse(isExpiredBefore, "새로 생성된 토큰은 만료되지 않아야 함");
 
         // 토큰 만료까지 대기
-        Thread.sleep(1500);
+        Thread.sleep(6000);
 
         // Then - 토큰이 만료됨
         boolean isExpiredAfter = jwtService.isTokenExpired(token);

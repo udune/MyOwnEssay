@@ -39,7 +39,7 @@ public class Record {
     private SlotType slotType;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "content", nullable = false, columnDefinition = "jsonb")
+    @Column(name = "content", nullable = false)
     private Map<String, Object> content;
 
     @Column(name = "is_completed", nullable = false)

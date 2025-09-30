@@ -19,7 +19,6 @@ import java.util.Map;
 @Getter
 @Setter
 @NoArgsConstructor
-@RequiredArgsConstructor
 public class Record {
 
     @Id

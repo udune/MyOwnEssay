@@ -14,7 +14,9 @@ import java.time.LocalDateTime;
 import java.util.Map;
 
 @Entity
-@Table(name = "records", uniqueConstraints = @UniqueConstraint(columnNames = {"user_id", "record_date", "slot_type"}))
+@Table(name = "records", uniqueConstraints = @UniqueConstraint(
+        name = "unique_record",
+        columnNames = {"user_id", "record_date", "slot_type"}))
 @EntityListeners(AuditingEntityListener.class)
 @Getter
 @Setter
@@ -51,23 +53,32 @@ public class Record {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
-    public void setCompleted() {
+    // 기록 완료 상태 설정 메서드
+    public void markAsCompleted() {
         this.isCompleted = true;
     }
 
-    public void setUncompleted() {
+    // 기록 미완료 상태 설정 메서드
+    public void markAsUncompleted() {
         this.isCompleted = false;
     }
 
+    // content 맵에서 특정 키의 값을 가져오는 메서드
     public Object getContentValue(String key) {
         return content != null ? content.get(key) : null;
     }
 
+    // content 맵에 특정 키-값 쌍을 추가하거나 업데이트하는 메서드
     public void setContentValue(String key, Object value) {
-        if (content == null) {
-            content = new java.util.HashMap<>();
+        if (this.content == null) {
+            this.content = new java.util.HashMap<>();
         }
 
-        content.put(key, value);
+        this.content.put(key, value);
+    }
+
+    // 기록이 완료되었는지 여부를 반환하는 메서드
+    public boolean isCompleted() {
+        return Boolean.TRUE.equals(this.isCompleted);
     }
 }

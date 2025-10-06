@@ -26,6 +26,50 @@ public class RecordService {
     private final RecordRepository recordRepository;
     private final UserRepository userRepository;
 
+    // 특정 사용자의 특정 기록을 소프트 삭제
+    @Transactional
+    public void deleteRecord(String email, Long recordId) {
+        log.info("기록 삭제 요청 (Soft Delete) - 이메일: {}, 기록 ID: {}", email, recordId);
+
+        // 사용자 조회
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
+
+        // 기록 조회(소프트 삭제되지 않은 기록만 조회)
+        Record record = recordRepository.findByIdAndUser(recordId, user)
+                .orElseThrow(() -> new RuntimeException("기록을 찾을 수 없습니다."));
+
+        // Soft Delete 처리
+        record.markAsDeleted();
+        recordRepository.save(record);
+
+        log.info("기록 소프트 삭제 성공 - 기록 ID: {}", recordId);
+    }
+
+    // 특정 사용자의 특정 기록을 복원
+    public void restoreRecord(String email, Long recordId) {
+        log.info("기록 복원 요청 - 이메일: {}, 기록 ID: {}", email, recordId);
+
+        // 사용자 조회
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
+
+        // 기록 조회(삭제된 기록 포함)
+        Record record = recordRepository.findById(recordId)
+                .orElseThrow(() -> new RuntimeException("기록을 찾을 수 없습니다."));
+
+        // 권한 확인
+        if (!record.getUser().getId().equals(user.getId())) {
+            throw new RuntimeException("해당 기록에 대한 권한이 없습니다.");
+        }
+
+        // Soft Delete 해제 처리
+        record.restore();
+        recordRepository.save(record);
+
+        log.info("기록 복원 성공 - 기록 ID: {}", recordId);
+    }
+
     // 특정 사용자의 특정 날짜와 슬롯 타입에 해당하는 기록을 저장 또는 업데이트
     @Transactional
     public RecordResponse saveRecord(String email, LocalDate date, SlotType slotType, RecordRequest request) {
@@ -103,28 +147,5 @@ public class RecordService {
         return records.stream()
                 .map(RecordResponse::from)
                 .collect(Collectors.toList());
-    }
-
-    // 특정 사용자의 특정 기록을 삭제
-    @Transactional
-    public void deleteRecord(String email, Long recordId) {
-        log.info("기록 삭제 요청 - 이메일: {}, 기록 ID: {}", email, recordId);
-
-        // 사용자 조회
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
-
-        // 기록 조회
-        Record record = recordRepository.findById(recordId)
-                .orElseThrow(() -> new RuntimeException("기록을 찾을 수 없습니다."));
-
-        // 기록이 해당 사용자에 속하는지 확인
-        if (!record.getUser().getId().equals(user.getId())) {
-            throw new RuntimeException("해당 사용자의 기록이 아닙니다.");
-        }
-
-        // 기록 삭제
-        recordRepository.delete(record);
-        log.info("기록 삭제 성공 - 기록 ID: {}", recordId);
     }
 }

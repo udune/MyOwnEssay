@@ -29,11 +29,16 @@ public class RecordResponse {
 
     private Boolean isCompleted;
 
+    private Boolean isDeleted;
+
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createdAt;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime updatedAt;
+
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private LocalDateTime deletedAt;
 
     // Entity -> DTO 변환 메서드
     public static RecordResponse from(Record record) {
@@ -44,8 +49,10 @@ public class RecordResponse {
                 .slotTypeDescription(record.getSlotType().getDescription())
                 .content(record.getContent())
                 .isCompleted(record.getIsCompleted())
+                .isDeleted(record.getIsDeleted())
                 .createdAt(record.getCreatedAt())
                 .updatedAt(record.getUpdatedAt())
+                .deletedAt(record.getDeletedAt())
                 .build();
     }
 

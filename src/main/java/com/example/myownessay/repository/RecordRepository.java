@@ -25,4 +25,7 @@ public interface RecordRepository extends JpaRepository<Record, Long> {
 
     // 특정 사용자와 날짜 범위에 해당하는 모든 기록을 조회
     List<Record> findByUserAndRecordDateBetween(User user, LocalDate startDate, LocalDate endDate);
+
+    // 특정 사용자와 기록 ID에 해당하는 기록을 조회
+    Optional<Record> findByIdAndUser(Long recordId, User user);
 }

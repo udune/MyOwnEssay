@@ -168,4 +168,33 @@ public class RecordController {
                     .body(ApiResponse.error("기록 삭제에 실패했습니다."));
         }
     }
+
+    // 특정 기록 복구
+    @Operation(
+        summary = "기록 복구",
+        description = "삭제된 기록을 복구합니다."
+    )
+    @PatchMapping("/{recordId}/restore")
+    public ResponseEntity<ApiResponse<?>> restoreRecord(
+        @Parameter(description = "복구할 기록 ID", example = "1")
+        @PathVariable Long recordId,
+        Authentication authentication
+    ) {
+        log.info("기록 복구 요청 - 기록 ID: {}, 사용자: {}", recordId, authentication.getName());
+
+        if (authentication == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(ApiResponse.error("인증이 필요합니다."));
+        }
+
+        try {
+            String email = authentication.getName();
+            recordService.restoreRecord(email, recordId);
+            return ResponseEntity.ok(ApiResponse.success("기록이 복구되었습니다."));
+        } catch (Exception e) {
+            log.error("기록 복구 실패: {}", e.getMessage());
+            return ResponseEntity.badRequest()
+                .body(ApiResponse.error("기록 복구에 실패했습니다."));
+        }
+    }
 }

@@ -1,9 +1,14 @@
-name: Deploy to Production
+name: Deploy to Production (Cloud Run)
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: asia-northeast3
+  SERVICE_NAME: essay-backend
 
 jobs:
   deploy-production:
@@ -27,202 +32,96 @@ jobs:
         env:
           JWT_SECRET_KEY: test-jwt-secret-key-for-ci-pipeline-must-be-256-bits
 
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker
+
       - name: Build Docker Image
         run: |
-          docker build -t essay-backend:production-${{ github.sha }} .
-          docker tag essay-backend:production-${{ github.sha }} essay-backend:production-latest
+          docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }} .
+          docker tag gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }} \
+                     gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:latest
 
-      - name: Save Docker Image
-        run: docker save essay-backend:production-latest | gzip > essay-backend-production.tar.gz
-
-      - name: Create deployment script
+      - name: Push Docker Image to GCR
         run: |
-          cat > deploy.sh << 'EOF'
-          #!/bin/bash
-          set -e
-          
-          echo "=== Starting Production Deployment ==="
-          
-          # 기존 컨테이너 정리
-          docker stop essay-backend || true
-          docker rm essay-backend || true
-          
-          # Docker 이미지 로드
-          echo "Loading Docker image..."
-          docker load < essay-backend-production.tar.gz
-          
-          # 환경변수 검증
-          if [ -z "$DB_PASSWORD" ] || [ -z "$JWT_SECRET_KEY" ]; then
-            echo "ERROR: Required environment variables not set!"
-            exit 1
-          fi
-          
-          echo "Environment check passed"
-          echo "DB_PASSWORD length: ${#DB_PASSWORD}"
-          echo "JWT_SECRET_KEY length: ${#JWT_SECRET_KEY}"
-          
-          # 컨테이너 실행
-          echo "Starting new container..."
-          docker run -d \
-            --name essay-backend \
-            -p 8080:8080 \
-            -e SPRING_PROFILES_ACTIVE=prod \
-            -e SPRING_DATASOURCE_URL=jdbc:postgresql://34.64.150.171:5432/myownessay-db \
-            -e SPRING_DATASOURCE_USERNAME=postgres \
-            -e SPRING_DATASOURCE_PASSWORD="$DB_PASSWORD" \
-            -e JWT_SECRET="$JWT_SECRET_KEY" \
-            -e JWT_EXPIRATION=86400000 \
-            -e JWT_REFRESH_EXPIRATION=604800000 \
-            --restart unless-stopped \
-            essay-backend:production-latest
-          
-          # 컨테이너 시작 대기
-          sleep 15
-          
-          # 컨테이너 상태 확인
-          if docker ps | grep -q essay-backend; then
-            echo "Container started successfully!"
-            docker logs essay-backend --tail=20
-          else
-            echo "Container failed to start!"
-            docker ps -a
-            docker logs essay-backend || true
-            exit 1
-          fi
-          
-          echo "=== Production Deployment Complete ==="
-          EOF
-          
-          chmod +x deploy.sh
+          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:latest
 
-      # 스테이징과 동일한 방식으로 디렉토리 정리
-      - name: Clean production directory
-        uses: appleboy/ssh-action@v0.1.6
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
         with:
-          host: 34.47.123.3
-          username: udune8438
-          key: ${{ secrets.PRODUCTION_SSH_KEY }}
-          script: |
-            sudo rm -rf /tmp/essay-production
-            mkdir -p /tmp/essay-production
-            sudo chown -R $USER:$USER /tmp/essay-production
+          service: ${{ env.SERVICE_NAME }}
+          region: ${{ env.REGION }}
+          image: gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+          env_vars: |
+            SPRING_PROFILES_ACTIVE=prod
+            DB_HOST=34.64.150.171
+            DB_NAME=myownessay-db
+            DB_USERNAME=postgres
+          secrets: |
+            DB_PASSWORD=PRODUCTION_DB_PASSWORD:latest
+            JWT_SECRET_KEY=PRODUCTION_JWT_SECRET:latest
+          flags: |
+            --port=8080
+            --memory=512Mi
+            --cpu=1
+            --timeout=300
+            --max-instances=10
+            --min-instances=0
+            --allow-unauthenticated
+            --startup-cpu-boost
 
-      - name: Copy files to production server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: 34.47.123.3
-          username: udune8438
-          key: ${{ secrets.PRODUCTION_SSH_KEY }}
-          port: 22
-          source: essay-backend-production.tar.gz,deploy.sh
-          target: /tmp/essay-production/
-          overwrite: true
-
-      - name: Deploy to production server
-        uses: appleboy/ssh-action@v0.1.6
-        with:
-          host: 34.47.123.3
-          username: udune8438
-          key: ${{ secrets.PRODUCTION_SSH_KEY }}
-          script: |
-            cd /tmp/essay-production
-            
-            # 스테이징과 동일한 Docker 권한 설정
-            sudo usermod -aG docker $USER || true
-            sudo systemctl start docker || true
-            sudo chmod 666 /var/run/docker.sock || true
-            
-            # 환경변수 설정
-            export DB_PASSWORD="${{ secrets.PRODUCTION_DB_PASSWORD }}"
-            export JWT_SECRET_KEY="${{ secrets.PRODUCTION_JWT_SECRET }}"
-            
-            # 배포 스크립트 실행
-            ./deploy.sh
-
-      # 스테이징과 동일한 SSH 헬스체크
-      - name: SSH Health Check
-        uses: appleboy/ssh-action@v0.1.6
-        with:
-          host: 34.47.123.3
-          username: udune8438
-          key: ${{ secrets.PRODUCTION_SSH_KEY }}
-          script: |
-            echo "Starting SSH Health Check..."
-            
-            # 컨테이너 상태 확인
-            if ! docker ps | grep -q essay-backend; then
-              echo "Container not running"
-              exit 1
+      - name: Health Check
+        run: |
+          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region ${{ env.REGION }} \
+            --format 'value(status.url)')
+          
+          echo "Service URL: $SERVICE_URL"
+          
+          echo "Waiting for service to be ready..."
+          for i in {1..30}; do
+            if curl -f -s "$SERVICE_URL/api/health" > /dev/null; then
+              echo "Health check passed!"
+              curl -s "$SERVICE_URL/api/health"
+              exit 0
             fi
-            echo "Container is running"
-            
-            # 포트 리스닝 확인
-            if ! ss -tlnp | grep -q :8080; then
-              echo "Port 8080 not listening"
-              exit 1
-            fi
-            echo "Port 8080 is listening"
-            
-            # 애플리케이션 응답 대기
-            echo "Waiting for application to be ready..."
-            for i in {1..15}; do
-              if curl -f -s http://localhost:8080/api/health > /dev/null; then
-                echo "Application health check passed!"
-            
-                # 상세 응답 확인
-                echo "Health response:"
-                curl -s http://localhost:8080/api/health
-            
-                echo "Production deployment successful!"
-                exit 0
-              fi
-            
-              if [ $i -lt 15 ]; then
-                echo "Attempt $i/15 - waiting 5 seconds..."
-                sleep 5
-              fi
-            done
-            
-            echo "Health check failed after 15 attempts"
-            echo "Recent logs:"
-            docker logs essay-backend --tail=30
-            exit 1
+            echo "Attempt $i/30 - waiting 5 seconds..."
+            sleep 5
+          done
+          
+          echo "Health check failed after 30 attempts"
+          exit 1
 
       - name: Deployment Summary
         if: success()
         run: |
+          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region ${{ env.REGION }} \
+            --format 'value(status.url)')
+          
           echo "===== PRODUCTION DEPLOYMENT SUCCESSFUL ====="
           echo "Version: ${{ github.sha }}"
-          echo "Server: 34.47.123.3:8080"
-          echo "Domain: https://myownessay.p-e.kr"
-          echo "Application: Running and healthy"
-          echo "Database: Connected to PostgreSQL"
-          echo "Security: JWT authentication enabled"
+          echo "Service URL: $SERVICE_URL"
+          echo "Custom Domain: https://myownessay.p-e.kr"
+          echo "Region: ${{ env.REGION }}"
+          echo "Image: gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
 
       - name: Debug on failure
         if: failure()
-        uses: appleboy/ssh-action@v0.1.6
-        with:
-          host: 34.47.123.3
-          username: udune8438
-          key: ${{ secrets.PRODUCTION_SSH_KEY }}
-          script: |
-            echo "=== DEBUGGING FAILED DEPLOYMENT ==="
-            echo "Container status:"
-            docker ps -a | grep essay || echo "No essay containers"
-            echo "Application logs:"
-            docker logs essay-backend --tail=50 || echo "No logs available"
-            echo "Port status:"
-            ss -tlnp | grep :8080 || echo "Port 8080 not listening"
-
-      - name: Cleanup
-        if: always()
-        uses: appleboy/ssh-action@v0.1.6
-        with:
-          host: 34.47.123.3
-          username: udune8438
-          key: ${{ secrets.PRODUCTION_SSH_KEY }}
-          script: |
-            cd /tmp/essay-production
-            rm -f essay-backend-production.tar.gz deploy.sh
-            docker system prune -f
+        run: |
+          echo "=== DEBUGGING FAILED DEPLOYMENT ==="
+          gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region ${{ env.REGION }} || echo "Service not found"
+          
+          gcloud logging read "resource.type=cloud_run_revision AND \
+            resource.labels.service_name=${{ env.SERVICE_NAME }}" \
+            --limit 50 \
+            --format json || echo "No logs available"

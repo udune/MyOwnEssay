@@ -76,7 +76,7 @@ jobs:
             --max-instances=10
             --min-instances=0
             --allow-unauthenticated
-            --startup-cpu-boost
+            --cpu-boost
 
       - name: Health Check
         run: |

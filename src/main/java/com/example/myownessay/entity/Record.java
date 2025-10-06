@@ -45,6 +45,9 @@ public class Record {
     @Column(name = "is_completed", nullable = false)
     private Boolean isCompleted = false;
 
+    @Column(name = "is_deleted", nullable = false)
+    private Boolean isDeleted = false;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -52,6 +55,9 @@ public class Record {
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
 
     // 기록 완료 상태 설정 메서드
     public void markAsCompleted() {
@@ -62,6 +68,11 @@ public class Record {
     public void markAsUncompleted() {
         this.isCompleted = false;
     }
+
+    // 기록 소프트 삭제 메서드
+    public void markAsDeleted() { this.isDeleted = true; }
+
+    public void restore() { this.isDeleted = false; this.deletedAt = null; }
 
     // content 맵에서 특정 키의 값을 가져오는 메서드
     public Object getContentValue(String key) {

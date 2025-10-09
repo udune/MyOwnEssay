@@ -133,6 +133,10 @@ public class RecordController {
             String email = authentication.getName();
             List<RecordResponse> records = recordService.getWeeklyRecords(email, startDate, endDate);
             return ResponseEntity.ok(ApiResponse.success(records));
+        } catch (IllegalArgumentException e) {
+          log.warn("잘못된 요청: {}", e.getMessage());
+          return ResponseEntity.badRequest()
+              .body(ApiResponse.error(e.getMessage()));
         } catch (Exception e) {
             log.error("주간 기록 조회 실패: {}", e.getMessage());
             return ResponseEntity.badRequest()

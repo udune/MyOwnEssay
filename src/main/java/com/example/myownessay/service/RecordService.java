@@ -136,6 +136,16 @@ public class RecordService {
     public List<RecordResponse> getWeeklyRecords(String email, LocalDate startDate, LocalDate endDate) {
         log.info("주간 기록 조회 요청 - 이메일: {}, 시작 날짜: {}, 종료 날짜: {}", email, startDate, endDate);
 
+        // 날짜 유효성 검사
+        if (endDate.isBefore(startDate)) {
+            throw new IllegalArgumentException("종료 날짜는 시작 날짜보다 이전일 수 없습니다.");
+        }
+
+        // 최대 31일 기간 제한
+        if (startDate.plusDays(31).isBefore(endDate)) {
+            throw new IllegalArgumentException("조회 기간은 최대 31일을 초과할 수 없습니다.");
+        }
+
         // 사용자 조회
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));

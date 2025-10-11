@@ -306,8 +306,8 @@ git push origin main
 
 ## API 문서
 
-- Swagger UI: `https://myownessay.p-e.kr/swagger-ui/index.html`
-- OpenAPI 3.0 스펙: `https://myownessay.p-e.kr/v3/api-docs`
+- Swagger UI: `https://essay-backend-sapi6cupdq-du.a.run.app/swagger-ui/index.html`
+- OpenAPI 3.0 스펙: `https://essay-backend-sapi6cupdq-du.a.run.app/v3/api-docs`
 
 ## 기여하기
 

@@ -13,9 +13,20 @@ public class DiarySlotValidator implements SlotContentValidator {
             throw new IllegalArgumentException("일기 기록은 비어있을 수 없습니다.");
         }
 
+        // 필수 필드 존재 여부 확인
+        if (!content.containsKey("question")) {
+            throw new IllegalArgumentException("질문을 입력해주세요.");
+        }
+        if (!content.containsKey("content")) {
+            throw new IllegalArgumentException("일기 내용을 입력해주세요.");
+        }
+        if (!content.containsKey("emotion")) {
+            throw new IllegalArgumentException("감정을 입력해주세요.");
+        }
+
         String question = getString(content, "question"); // "question" 키에 해당하는 값 조회
-        String diaryContent  = getString(content, "content"); // "content" 키에 해당하는
-        String emotion  = getString(content, "emotion "); // "emotion" 키에 해당하는 값 조회
+        String diaryContent  = getString(content, "content"); // "content" 키에 해당하는 값 조회
+        String emotion  = getString(content, "emotion"); // "emotion" 키에 해당하는 값 조회
 
         if (question == null || question.trim().isEmpty()) { // 질문이 null 또는 빈 문자열인 경우 예외 발생
             throw new IllegalArgumentException("질문을 입력해주세요.");

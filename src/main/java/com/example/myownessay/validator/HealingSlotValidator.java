@@ -38,8 +38,8 @@ public class HealingSlotValidator implements SlotContentValidator {
             throw new IllegalArgumentException("활동 결과를 입력해주세요.");
         }
 
-        if (result.length() > 500) { // 활동이 500자 초과인 경우 예외 발생
-            throw new IllegalArgumentException("활동은 500자 이내로 작성해주세요.");
+        if (result.length() > 500) { // 활동 결과가 500자 초과인 경우 예외 발생
+            throw new IllegalArgumentException("활동 결과는 500자 이내로 작성해주세요.");
         }
     }
 

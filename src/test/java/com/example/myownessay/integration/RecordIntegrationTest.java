@@ -181,6 +181,7 @@ public class RecordIntegrationTest {
         Map<String, Object> readingContent = new HashMap<>();
         readingContent.put("quote", "테스트 명언");
         readingContent.put("author", "저자");
+        readingContent.put("thought", "테스트 생각");
         mockMvc.perform(put("/api/records/{date}/{slotType}", today, "READING")
                         .header("Authorization", "Bearer " + accessToken)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -189,6 +190,8 @@ public class RecordIntegrationTest {
 
         // 2. 상담
         Map<String, Object> consultingContent = new HashMap<>();
+        consultingContent.put("question", "테스트 질문");
+        consultingContent.put("choice", "테스트 선택");
         consultingContent.put("result", "상담 결과");
         mockMvc.perform(put("/api/records/{date}/{slotType}", today, "CONSULTING")
                         .header("Authorization", "Bearer " + accessToken)
@@ -200,6 +203,7 @@ public class RecordIntegrationTest {
         Map<String, Object> healingContent = new HashMap<>();
         healingContent.put("activity", "breathing");
         healingContent.put("duration", 300);
+        healingContent.put("result", "편안함을 느낌");
         mockMvc.perform(put("/api/records/{date}/{slotType}", today, "HEALING")
                         .header("Authorization", "Bearer " + accessToken)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -208,6 +212,7 @@ public class RecordIntegrationTest {
 
         // 4. 일기
         Map<String, Object> diaryContent = new HashMap<>();
+        diaryContent.put("question", "오늘 어땠어?");
         diaryContent.put("content", "오늘의 일기");
         diaryContent.put("emotion", "happy");
         mockMvc.perform(put("/api/records/{date}/{slotType}", today, "DIARY")
@@ -228,6 +233,8 @@ public class RecordIntegrationTest {
         // 독서 기록 (완료)
         Map<String, Object> readingContent = new HashMap<>();
         readingContent.put("quote", "테스트 명언");
+        readingContent.put("author", "저자");
+        readingContent.put("thought", "생각");
         mockMvc.perform(put("/api/records/{date}/{slotType}", today, "READING")
                 .header("Authorization", "Bearer " + accessToken)
                 .contentType(MediaType.APPLICATION_JSON)
@@ -235,7 +242,9 @@ public class RecordIntegrationTest {
 
         // 일기 기록 (미완료)
         Map<String, Object> diaryContent = new HashMap<>();
+        diaryContent.put("question", "오늘 어땠나요?");
         diaryContent.put("content", "오늘의 일기");
+        diaryContent.put("emotion", "happy");
         mockMvc.perform(put("/api/records/{date}/{slotType}", today, "DIARY")
                 .header("Authorization", "Bearer " + accessToken)
                 .contentType(MediaType.APPLICATION_JSON)
@@ -268,6 +277,8 @@ public class RecordIntegrationTest {
             LocalDate date = today.minusDays(i);
             Map<String, Object> content = new HashMap<>();
             content.put("quote", "명언 " + i);
+            content.put("author", "저자 " + i);
+            content.put("thought", "생각 " + i);
             RecordRequest request = new RecordRequest(content, true);
 
             mockMvc.perform(put("/api/records/{date}/{slotType}", date, "READING")
@@ -300,6 +311,8 @@ public class RecordIntegrationTest {
         LocalDate today = LocalDate.now();
         Map<String, Object> content = new HashMap<>();
         content.put("quote", "삭제될 명언");
+        content.put("author", "저자");
+        content.put("thought", "생각");
         RecordRequest request = new RecordRequest(content, true);
 
         MvcResult saveResult = mockMvc.perform(put("/api/records/{date}/{slotType}", today, "READING")
@@ -365,6 +378,8 @@ public class RecordIntegrationTest {
         // 1. 기록 저장 (미완료)
         Map<String, Object> content = new HashMap<>();
         content.put("quote", "시작 명언");
+        content.put("author", "저자");
+        content.put("thought", "생각");
         RecordRequest saveRequest = new RecordRequest(content, false);
 
         MvcResult saveResult = mockMvc.perform(put("/api/records/{date}/{slotType}", today, "READING")
@@ -395,6 +410,7 @@ public class RecordIntegrationTest {
         Map<String, Object> updatedContent = new HashMap<>();
         updatedContent.put("quote", "수정된 명언");
         updatedContent.put("author", "새 저자");
+        updatedContent.put("thought", "새로운 생각");
         RecordRequest updateRequest = new RecordRequest(updatedContent, true);
 
         mockMvc.perform(put("/api/records/{date}/{slotType}", today, "READING")

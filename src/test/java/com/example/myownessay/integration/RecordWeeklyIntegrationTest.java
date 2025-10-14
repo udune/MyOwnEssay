@@ -216,7 +216,30 @@ class RecordWeeklyIntegrationTest {
     // Helper method - 기록 생성
     private void createRecord(LocalDate date, String slotType) throws Exception {
         Map<String, Object> content = new HashMap<>();
-        content.put("test", "테스트 내용");
+
+        // 슬롯 타입에 따라 필수 필드 추가
+        switch (slotType) {
+            case "READING":
+                content.put("quote", "테스트 명언");
+                content.put("author", "저자");
+                content.put("thought", "생각");
+                break;
+            case "CONSULTING":
+                content.put("question", "질문");
+                content.put("choice", "선택");
+                content.put("result", "결과");
+                break;
+            case "HEALING":
+                content.put("activity", "활동");
+                content.put("duration", 300);
+                content.put("result", "결과");
+                break;
+            case "DIARY":
+                content.put("question", "질문");
+                content.put("content", "내용");
+                content.put("emotion", "감정");
+                break;
+        }
 
         RecordRequest request = new RecordRequest();
         request.setContent(content);

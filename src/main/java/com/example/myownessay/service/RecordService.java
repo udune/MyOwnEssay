@@ -8,6 +8,8 @@ import com.example.myownessay.entity.Record;
 import com.example.myownessay.entity.enums.SlotType;
 import com.example.myownessay.repository.RecordRepository;
 import com.example.myownessay.repository.UserRepository;
+import com.example.myownessay.validator.SlotContentValidator;
+import com.example.myownessay.validator.SlotValidatorFactory;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -25,6 +27,7 @@ public class RecordService {
 
     private final RecordRepository recordRepository;
     private final UserRepository userRepository;
+    private final SlotValidatorFactory validatorFactory;
 
     // 특정 사용자의 특정 기록을 소프트 삭제
     @Transactional
@@ -74,6 +77,11 @@ public class RecordService {
     @Transactional
     public RecordResponse saveRecord(String email, LocalDate date, SlotType slotType, RecordRequest request) {
         log.info("기록 저장 요청 - 이메일: {}, 날짜: {}, 슬롯 타입: {}", email, date, slotType);
+
+        // 슬롯 콘텐츠 유효성 검사
+        SlotContentValidator validator = validatorFactory.getValidator(slotType);
+        validator.validate(request.getContent());
+        log.info("슬롯 콘텐츠 유효성 검사 통과");
 
         // 사용자 조회
         User user = userRepository.findByEmail(email)

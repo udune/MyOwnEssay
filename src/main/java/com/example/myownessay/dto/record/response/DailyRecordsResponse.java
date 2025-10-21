@@ -28,8 +28,8 @@ public class DailyRecordsResponse {
     // 완료된 슬롯 수
     private Integer completedCount;
 
-    // 총 기록 수는 고정값 4로 설정
-    private Integer totalRecords;
+    // 총 슬롯 수는 고정값 4로 설정
+    private Integer totalSlots;
 
     // 모든 슬롯이 완료되었는지 여부
     private Boolean isAllCompleted;
@@ -55,7 +55,7 @@ public class DailyRecordsResponse {
                 .records(records)
                 .completionRate(completionRate)
                 .completedCount(completedCount)
-                .totalRecords(4)
+                .totalSlots(4)
                 .isAllCompleted(isAllCompleted)
                 .incompleteRecords(incompleteRecords)
                 .build();

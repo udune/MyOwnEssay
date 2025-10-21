@@ -41,6 +41,9 @@ class RecordServiceTest {
     @Mock
     private ReadingSlotValidator readingSlotValidator;
 
+    @Mock
+    private RecordCompletionService recordCompletionService;
+
     @InjectMocks
     private RecordService recordService;
 
@@ -211,6 +214,8 @@ class RecordServiceTest {
 
         when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(testUser));
         when(recordRepository.findByUserAndRecordDate(testUser, testDate)).thenReturn(records);
+        when(recordCompletionService.calculateDailyCompletion(anyInt())).thenReturn(0.0);
+        when(recordCompletionService.isAllCompleted(anyInt())).thenReturn(false);
 
         // When
         DailyRecordsResponse result = recordService.getDailyRecords("test@example.com", testDate);

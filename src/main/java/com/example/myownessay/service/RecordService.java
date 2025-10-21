@@ -28,6 +28,7 @@ public class RecordService {
     private final RecordRepository recordRepository;
     private final UserRepository userRepository;
     private final SlotValidatorFactory validatorFactory;
+    private final RecordCompletionService recordCompletionService;
 
     // 특정 사용자의 특정 기록을 소프트 삭제
     @Transactional
@@ -135,8 +136,17 @@ public class RecordService {
                 .map(RecordResponse::from)
                 .collect(Collectors.toList());
 
+        int completedCount = (int) records.stream()
+                .filter(Record::getIsCompleted)
+                .count();
+        log.info("완료된 기록 수: {}", completedCount);
+
+        double completionRate = recordCompletionService.calculateDailyCompletion(completedCount);
+        boolean isAllCompleted = recordCompletionService.isAllCompleted(completedCount);
+        log.info("계산된 완료율: {}, 모든 슬롯 완료 여부: {}", completionRate, isAllCompleted);
+
         // DailyRecordsResponse 생성 및 반환
-        return DailyRecordsResponse.from(date, recordResponses);
+        return DailyRecordsResponse.from(date, recordResponses, completionRate, completedCount, isAllCompleted);
     }
 
     // 특정 사용자의 특정 기간(주간)에 해당하는 모든 기록 조회
@@ -165,5 +175,39 @@ public class RecordService {
         return records.stream()
                 .map(RecordResponse::from)
                 .collect(Collectors.toList());
+    }
+
+    // 특정 사용자의 특정 주의 완료율 계산
+    @Transactional(readOnly = true)
+    public double calculateWeeklyCompletionRate(String email, LocalDate weekStart) {
+        log.info("주간 완료율 계산 요청 - 이메일: {}, 주 시작 날짜: {}", email, weekStart);
+
+        // 사용자 조회
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
+
+        // 주의 끝 날짜 계산
+        LocalDate weekEnd = weekStart.plusDays(6);
+        int completedDays = 0;
+
+        // 주간 각 날짜별로 완료된 기록 수 확인
+        for (LocalDate date = weekStart; !date.isAfter(weekEnd); date = date.plusDays(1)) {
+            List<Record> dailyRecords = recordRepository.findByUserAndRecordDate(user, date);
+
+            int completedCount = (int) dailyRecords.stream()
+                    .filter(Record::getIsCompleted)
+                    .count();
+
+            if (recordCompletionService.isAllCompleted(completedCount)) {
+                completedDays++;
+            }
+        }
+
+        // 주간 완료율 계산
+        double weeklyRate = recordCompletionService.calculateWeeklyCompletion(completedDays);
+
+        log.info("계산된 주간 완료율: {}", weeklyRate);
+
+        return weeklyRate;
     }
 }

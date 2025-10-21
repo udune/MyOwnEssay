@@ -5,6 +5,7 @@ import com.example.myownessay.dto.record.request.RecordRequest;
 import com.example.myownessay.dto.record.response.DailyRecordsResponse;
 import com.example.myownessay.dto.record.response.RecordResponse;
 import com.example.myownessay.entity.enums.SlotType;
+import com.example.myownessay.service.RecordCompletionService;
 import com.example.myownessay.service.RecordService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -32,6 +33,7 @@ import java.util.List;
 public class RecordController {
 
     private final RecordService recordService;
+    private final RecordCompletionService recordCompletionService;
 
     // 특정 날짜와 슬롯 타입에 해당하는 기록 저장 또는 수정
     @Operation(
@@ -82,7 +84,9 @@ public class RecordController {
     )
     @GetMapping("/{date}")
     public ResponseEntity<ApiResponse<?>> getDailyRecords(
-            @Parameter(description = "조회할 날짜 (yyyy-MM-dd)", example = "2024-06-15") @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+            @Parameter(description = "조회할 날짜 (yyyy-MM-dd)", example = "2024-06-15")
+            @PathVariable
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
             LocalDate date,
             Authentication authentication
     ) {
@@ -98,6 +102,14 @@ public class RecordController {
 
             DailyRecordsResponse response = recordService.getDailyRecords(email, date);
             log.info("일일 기록 조회 성공 - 날짜: {}, 기록 수: {}, 완료율: {}%", date, response.getRecords().size(), response.getCompletionRate() * 100);
+
+            // 완료율 계산
+            int completedCount = response.getCompletedCount();
+            double completionRate = recordCompletionService.calculateDailyCompletion(completedCount);
+            int percentage = recordCompletionService.toPercentage(completionRate);
+            boolean isAllCompleted = recordCompletionService.isAllCompleted(completedCount);
+
+            log.info("계산된 완료율: {}%, 모든 슬롯 완료 여부: {}", percentage, isAllCompleted);
 
             return ResponseEntity.ok(ApiResponse.success(response));
         } catch (Exception e) {

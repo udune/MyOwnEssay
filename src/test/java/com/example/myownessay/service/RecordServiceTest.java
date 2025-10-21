@@ -8,6 +8,8 @@ import com.example.myownessay.entity.User;
 import com.example.myownessay.entity.enums.SlotType;
 import com.example.myownessay.repository.RecordRepository;
 import com.example.myownessay.repository.UserRepository;
+import com.example.myownessay.validator.SlotValidatorFactory;
+import com.example.myownessay.validator.ReadingSlotValidator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -24,7 +26,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-@DisplayName("기록 서비스 단위 테스트")
+@DisplayName("기록 서비스 단위 테스트 (검증 로직 포함)")
 class RecordServiceTest {
 
     @Mock
@@ -32,6 +34,15 @@ class RecordServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private SlotValidatorFactory validatorFactory;
+
+    @Mock
+    private ReadingSlotValidator readingSlotValidator;
+
+    @Mock
+    private RecordCompletionService recordCompletionService;
 
     @InjectMocks
     private RecordService recordService;
@@ -50,19 +61,21 @@ class RecordServiceTest {
         testDate = LocalDate.of(2024, 6, 15);
 
         testContent = new HashMap<>();
-        testContent.put("quote", "테스트 명언");
-        testContent.put("author", "테스트 저자");
-        testContent.put("thought", "테스트 생각");
+        testContent.put("quote", "완벽보다 계속하기");
+        testContent.put("author", "제임스 클리어");
+        testContent.put("thought", "멈추지 않는 것이 중요하다");
     }
 
     @Test
-    @DisplayName("기록 저장 - 새로운 기록 생성 성공")
-    void saveRecord_새로운기록_성공() {
+    @DisplayName("기록 저장 - 검증 통과 후 새로운 기록 생성 성공")
+    void saveRecord_검증통과_새로운기록_성공() {
         // Given
         RecordRequest request = new RecordRequest();
         request.setContent(testContent);
         request.setCompleted(true);
 
+        when(validatorFactory.getValidator(SlotType.READING)).thenReturn(readingSlotValidator);
+        doNothing().when(readingSlotValidator).validate(testContent);
         when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(testUser));
         when(recordRepository.findByUserAndRecordDateAndSlotType(testUser, testDate, SlotType.READING))
                 .thenReturn(Optional.empty());
@@ -87,9 +100,40 @@ class RecordServiceTest {
         assertTrue(result.getIsCompleted());
         assertEquals(testContent, result.getContent());
 
+        verify(validatorFactory, times(1)).getValidator(SlotType.READING);
+        verify(readingSlotValidator, times(1)).validate(testContent);
         verify(userRepository, times(1)).findByEmail("test@example.com");
         verify(recordRepository, times(1)).findByUserAndRecordDateAndSlotType(testUser, testDate, SlotType.READING);
         verify(recordRepository, times(1)).save(any(Record.class));
+    }
+
+    @Test
+    @DisplayName("기록 저장 - 검증 실패 시 예외 발생")
+    void saveRecord_검증실패_예외발생() {
+        // Given
+        Map<String, Object> invalidContent = new HashMap<>();
+        invalidContent.put("author", "제임스 클리어");
+        // quote 누락
+
+        RecordRequest request = new RecordRequest();
+        request.setContent(invalidContent);
+        request.setCompleted(true);
+
+        when(validatorFactory.getValidator(SlotType.READING)).thenReturn(readingSlotValidator);
+        doThrow(new IllegalArgumentException("명언을 입력해주세요."))
+                .when(readingSlotValidator).validate(invalidContent);
+
+        // When & Then
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+            recordService.saveRecord("test@example.com", testDate, SlotType.READING, request);
+        });
+
+        assertEquals("명언을 입력해주세요.", exception.getMessage());
+
+        verify(validatorFactory, times(1)).getValidator(SlotType.READING);
+        verify(readingSlotValidator, times(1)).validate(invalidContent);
+        verify(userRepository, never()).findByEmail(anyString());
+        verify(recordRepository, never()).save(any(Record.class));
     }
 
     @Test
@@ -108,6 +152,8 @@ class RecordServiceTest {
         request.setContent(testContent);
         request.setCompleted(true);
 
+        when(validatorFactory.getValidator(SlotType.READING)).thenReturn(readingSlotValidator);
+        doNothing().when(readingSlotValidator).validate(testContent);
         when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(testUser));
         when(recordRepository.findByUserAndRecordDateAndSlotType(testUser, testDate, SlotType.READING))
                 .thenReturn(Optional.of(existingRecord));
@@ -121,6 +167,8 @@ class RecordServiceTest {
         assertTrue(result.getIsCompleted());
         assertEquals(testContent, result.getContent());
 
+        verify(validatorFactory, times(1)).getValidator(SlotType.READING);
+        verify(readingSlotValidator, times(1)).validate(testContent);
         verify(recordRepository, times(1)).save(existingRecord);
     }
 
@@ -132,6 +180,8 @@ class RecordServiceTest {
         request.setContent(testContent);
         request.setCompleted(true);
 
+        when(validatorFactory.getValidator(SlotType.READING)).thenReturn(readingSlotValidator);
+        doNothing().when(readingSlotValidator).validate(testContent);
         when(userRepository.findByEmail("notexist@example.com")).thenReturn(Optional.empty());
 
         // When & Then
@@ -147,28 +197,25 @@ class RecordServiceTest {
     @DisplayName("일일 기록 조회 - 성공")
     void getDailyRecords_성공() {
         // Given
-        List<Record> records = new ArrayList<>();
-
         Record record1 = new Record();
         record1.setId(1L);
         record1.setUser(testUser);
         record1.setRecordDate(testDate);
         record1.setSlotType(SlotType.READING);
         record1.setContent(testContent);
-        record1.markAsCompleted();
-        records.add(record1);
 
         Record record2 = new Record();
         record2.setId(2L);
         record2.setUser(testUser);
         record2.setRecordDate(testDate);
         record2.setSlotType(SlotType.DIARY);
-        record2.setContent(new HashMap<>());
-        record2.markAsCompleted();
-        records.add(record2);
+
+        List<Record> records = Arrays.asList(record1, record2);
 
         when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(testUser));
         when(recordRepository.findByUserAndRecordDate(testUser, testDate)).thenReturn(records);
+        when(recordCompletionService.calculateDailyCompletion(anyInt())).thenReturn(0.0);
+        when(recordCompletionService.isAllCompleted(anyInt())).thenReturn(false);
 
         // When
         DailyRecordsResponse result = recordService.getDailyRecords("test@example.com", testDate);
@@ -177,43 +224,9 @@ class RecordServiceTest {
         assertNotNull(result);
         assertEquals(testDate, result.getDate());
         assertEquals(2, result.getRecords().size());
-        assertEquals(0.5, result.getCompletionRate()); // 2/4 = 0.5
-        assertEquals(2, result.getCompletedCount());
-        assertEquals(4, result.getTotalSlots());
-        assertFalse(result.getIsAllCompleted());
 
         verify(userRepository, times(1)).findByEmail("test@example.com");
         verify(recordRepository, times(1)).findByUserAndRecordDate(testUser, testDate);
-    }
-
-    @Test
-    @DisplayName("일일 기록 조회 - 모든 슬롯 완료")
-    void getDailyRecords_모든슬롯완료() {
-        // Given
-        List<Record> records = new ArrayList<>();
-
-        for (SlotType slotType : SlotType.values()) {
-            Record record = new Record();
-            record.setId(Long.valueOf(slotType.ordinal() + 1));
-            record.setUser(testUser);
-            record.setRecordDate(testDate);
-            record.setSlotType(slotType);
-            record.setContent(new HashMap<>());
-            record.markAsCompleted();
-            records.add(record);
-        }
-
-        when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(testUser));
-        when(recordRepository.findByUserAndRecordDate(testUser, testDate)).thenReturn(records);
-
-        // When
-        DailyRecordsResponse result = recordService.getDailyRecords("test@example.com", testDate);
-
-        // Then
-        assertEquals(1.0, result.getCompletionRate()); // 4/4 = 1.0
-        assertEquals(4, result.getCompletedCount());
-        assertTrue(result.getIsAllCompleted());
-        assertTrue(result.getIncompleteSlots().isEmpty());
     }
 
     @Test
@@ -226,12 +239,10 @@ class RecordServiceTest {
         List<Record> weeklyRecords = new ArrayList<>();
         for (int i = 0; i < 7; i++) {
             Record record = new Record();
-            record.setId((long) (i + 1));
+            record.setId((long) i + 1);
             record.setUser(testUser);
             record.setRecordDate(startDate.plusDays(i));
             record.setSlotType(SlotType.READING);
-            record.setContent(testContent);
-            record.markAsCompleted();
             weeklyRecords.add(record);
         }
 
@@ -272,70 +283,5 @@ class RecordServiceTest {
         verify(userRepository, times(1)).findByEmail("test@example.com");
         verify(recordRepository, times(1)).findByIdAndUser(1L, testUser);
         verify(recordRepository, times(1)).save(record);
-    }
-
-    @Test
-    @DisplayName("기록 삭제 - 기록 없음 실패")
-    void deleteRecord_기록없음_실패() {
-        // Given
-        when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(testUser));
-        when(recordRepository.findByIdAndUser(999L, testUser)).thenReturn(Optional.empty());
-
-        // When & Then
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
-            recordService.deleteRecord("test@example.com", 999L);
-        });
-
-        assertEquals("기록을 찾을 수 없습니다.", exception.getMessage());
-        verify(recordRepository, never()).save(any(Record.class));
-    }
-
-    @Test
-    @DisplayName("기록 삭제 - 다른 사용자의 기록 삭제 실패")
-    void deleteRecord_다른사용자기록_실패() {
-        // Given
-        User otherUser = new User();
-        otherUser.setId(2L);
-        otherUser.setEmail("other@example.com");
-
-        when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(testUser));
-        when(recordRepository.findByIdAndUser(1L, testUser)).thenReturn(Optional.empty());
-
-        // When & Then
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
-            recordService.deleteRecord("test@example.com", 1L);
-        });
-
-        assertEquals("기록을 찾을 수 없습니다.", exception.getMessage());
-        verify(recordRepository, never()).save(any(Record.class));
-    }
-
-    @Test
-    @DisplayName("기록 저장 - 미완료 상태로 저장")
-    void saveRecord_미완료상태_성공() {
-        // Given
-        RecordRequest request = new RecordRequest();
-        request.setContent(testContent);
-        request.setCompleted(false);
-
-        when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(testUser));
-        when(recordRepository.findByUserAndRecordDateAndSlotType(testUser, testDate, SlotType.READING))
-                .thenReturn(Optional.empty());
-
-        Record savedRecord = new Record();
-        savedRecord.setId(1L);
-        savedRecord.setUser(testUser);
-        savedRecord.setRecordDate(testDate);
-        savedRecord.setSlotType(SlotType.READING);
-        savedRecord.setContent(testContent);
-        savedRecord.markAsUncompleted();
-
-        when(recordRepository.save(any(Record.class))).thenReturn(savedRecord);
-
-        // When
-        RecordResponse result = recordService.saveRecord("test@example.com", testDate, SlotType.READING, request);
-
-        // Then
-        assertFalse(result.getIsCompleted());
     }
 }

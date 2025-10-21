@@ -1,9 +1,11 @@
 package com.example.myownessay.dto.record.response;
 
+import com.example.myownessay.entity.enums.SlotType;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.*;
 
 import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.List;
 
 @Builder
@@ -33,39 +35,33 @@ public class DailyRecordsResponse {
     private Boolean isAllCompleted;
 
     // 완료되지 않은 슬롯 타입 목록
-    private List<String> incompleteSlots;
+    private List<String> incompleteRecords;
 
-    // Factory method to create DailyRecordsResponse
-    public static DailyRecordsResponse from(LocalDate date, List<RecordResponse> records) {
-        int totalSlots = 4;
-        long completedCount = records.stream()
-                .filter(RecordResponse::getIsCompleted)
-                .count();
-
-        double completionRate = totalSlots > 0
-                ? (double) completedCount / totalSlots
-                : 0.0;
-
-        boolean isAllCompleted = completedCount == totalSlots;
-
-        List<String> allSlots = List.of("READING", "CONSULTING", "HEALING", "DIARY");
-        List<String> completedSlotTypes = records.stream()
+    public static DailyRecordsResponse from(LocalDate date, List<RecordResponse> records, double completionRate, int completedCount, boolean isAllCompleted) {
+        // 완료된 기록의 슬롯 타입 이름 목록 생성
+        List<String> completedRecordTypes = records.stream()
                 .filter(RecordResponse::getIsCompleted)
                 .map(record -> record.getSlotType().name())
                 .toList();
 
-        List<String> incompleteSlots = allSlots.stream()
-                .filter(slot -> !completedSlotTypes.contains(slot))
+        // 완료되지 않은 슬롯 타입 이름 목록 생성
+        List<String> incompleteRecords = Arrays.stream(SlotType.values())
+                .map(SlotType::name)
+                .filter(record -> !completedRecordTypes.contains(record))
                 .toList();
 
         return DailyRecordsResponse.builder()
                 .date(date)
                 .records(records)
                 .completionRate(completionRate)
-                .completedCount((int) completedCount)
-                .totalSlots(totalSlots)
+                .completedCount(completedCount)
+                .totalSlots(4)
                 .isAllCompleted(isAllCompleted)
-                .incompleteSlots(incompleteSlots)
+                .incompleteRecords(incompleteRecords)
                 .build();
+    }
+
+    public Integer getCompletionPercentage() {
+        return completionRate != null ? (int) Math.round(completionRate * 100) : null;
     }
 }

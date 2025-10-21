@@ -9,6 +9,7 @@ import lombok.Setter;
 import java.time.LocalDateTime;
 import java.util.Map;
 
+// 기록 데이터를 전송하기 위한 DTO
 @Getter
 @Setter
 @NoArgsConstructor

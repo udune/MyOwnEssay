@@ -1,21 +1,17 @@
 # 프로덕션 환경 설정 (Supabase PostgreSQL)
+server:
+  port: ${PORT:8080}
+
 spring:
   datasource:
     url: ${DATABASE_URL}
-    username: ${DB_USERNAME:postgres}
+    username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
-    hikari:
-      connection-timeout: 30000
-      idle-timeout: 600000
-      max-lifetime: 1800000
-      maximum-pool-size: 10
-      minimum-idle: 5
-      leak-detection-threshold: 60000
 
   jpa:
     hibernate:
-      ddl-auto: validate # 프로덕션에서는 스키마 검증만
+      ddl-auto: update # 초기 배포를 위해 update로 변경
     show-sql: false # SQL 로그 비활성화 (성능상)
     properties:
       hibernate:

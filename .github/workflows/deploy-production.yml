@@ -55,6 +55,18 @@ jobs:
           docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
           docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:latest
 
+      - name: Clear existing Cloud Run configuration
+        run: |
+          if gcloud run services describe ${{ env.SERVICE_NAME }} --region ${{ env.REGION }} &> /dev/null; then
+            echo "Clearing existing environment variables and secrets..."
+            gcloud run services update ${{ env.SERVICE_NAME }} \
+              --region ${{ env.REGION }} \
+              --clear-env-vars \
+              --clear-secrets || echo "Failed to clear, service might not exist yet"
+          else
+            echo "Service does not exist yet, skipping clear step"
+          fi
+
       - name: Deploy to Cloud Run
         uses: google-github-actions/deploy-cloudrun@v2
         with:
@@ -64,7 +76,7 @@ jobs:
           env_vars: |
             SPRING_PROFILES_ACTIVE=prod
             DATABASE_URL=${{ secrets.DATABASE_URL }}
-            DB_USERNAME=${{ secrets.DB_USERNAME }}
+            DB_USERNAME=${{ secrets.DB_USERNAME || 'postgres.yfaxpflhphstwktrgvaa' }}
             DB_PASSWORD=${{ secrets.DB_PASSWORD }}
             JWT_SECRET_KEY=${{ secrets.JWT_SECRET_KEY }}
             OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}

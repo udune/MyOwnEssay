@@ -1,5 +1,18 @@
-# 프로덕션 환경 설정
+# 프로덕션 환경 설정 (Supabase PostgreSQL)
 spring:
+  datasource:
+    url: ${DATABASE_URL}
+    username: postgres
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      maximum-pool-size: 10
+      minimum-idle: 5
+      leak-detection-threshold: 60000
+
   jpa:
     hibernate:
       ddl-auto: validate # 프로덕션에서는 스키마 검증만
@@ -12,23 +25,10 @@ spring:
           time_zone: UTC
     open-in-view: false
 
-  datasource:
-    hikari:
-      connection-timeout: 30000
-      idle-timeout: 600000
-      max-lifetime: 1800000
-      maximum-pool-size: 10
-      minimum-idle: 5
-      leak-detection-threshold: 60000
-
-# JWT 프로덕션 설정 (환경변수에서 주입)
-jwt:
-  expiration: 86400000 # 24시간
-
 # 프로덕션 로깅 설정 (최소화)
 logging:
   level:
-    com.example.myownessay: WARN
+    com.example.myownessay: INFO
     org.springframework.security: WARN
     org.hibernate.SQL: ERROR
     org.springframework.web: WARN

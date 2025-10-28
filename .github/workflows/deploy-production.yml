@@ -76,7 +76,7 @@ jobs:
           env_vars: |
             SPRING_PROFILES_ACTIVE=prod
             DATABASE_URL=${{ secrets.DATABASE_URL }}
-            DB_USERNAME=${{ secrets.DB_USERNAME || 'postgres.yfaxpflhphstwktrgvaa' }}
+            DB_USERNAME=${{ secrets.DB_USERNAME }}
             DB_PASSWORD=${{ secrets.DB_PASSWORD }}
             JWT_SECRET_KEY=${{ secrets.JWT_SECRET_KEY }}
             OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}

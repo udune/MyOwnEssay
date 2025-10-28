@@ -2,47 +2,28 @@ spring:
   application:
     name: essay-backend
 
-  profiles:
-    active: dev
-
   datasource:
-    # Google Cloud SQL 연결 정보
-    url: jdbc:postgresql://${DB_HOST:34.64.150.171}:5432/${DB_NAME:myownessay-db?sslmode=require}
-    username: ${DB_USERNAME:postgres}
+    url: ${DATABASE_URL}
+    username: postgres
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
 
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: update
     show-sql: false
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
-    open-in-view: false
+
+  security:
+    jwt:
+        secret: ${JWT_SECRET_KEY}
+        expiration: 86400  # 1일 (초 단위)
+
+openai:
+  api-key: ${OPENAI_API_KEY}
 
 server:
-  port: ${PORT:8080}
-
-# JWT Configuration
-jwt:
-  secret: ${JWT_SECRET_KEY}
-  expiration: 86400000
-  refresh-expiration: 604800000
-
-# Management Endpoints
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info
-  endpoint:
-    health:
-      show-details: when_authorized
-
-# Logging Configuration
-logging:
-  level:
-    com.example.myownessay: INFO
-    org.springframework.security: INFO
+  port: 8080

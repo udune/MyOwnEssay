@@ -32,8 +32,7 @@ public class EssayService {
     public EssayResponse createEssay(String email, EssayCreateRequest request) {
         log.info("에세이 생성 요청 - 이메일: {}", email);
 
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
+        User user = getUserByEmail(email);
 
         Essay essay = Essay.builder()
                 .user(user)
@@ -60,8 +59,7 @@ public class EssayService {
     public EssayResponse getEssay(String email, Long essayId) {
         log.info("에세이 조회 요청 - 이메일: {}, 에세이 ID: {}", email, essayId);
 
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
+        User user = getUserByEmail(email);
 
         Essay essay = essayRepository.findByIdAndUser(essayId, user)
                 .orElseThrow(() -> new RuntimeException("에세이를 찾을 수 없습니다."));
@@ -76,8 +74,7 @@ public class EssayService {
     public List<EssayResponse> getMyEssays(String email) {
         log.info("내 에세이 목록 조회 요청 - 이메일: {}", email);
 
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
+        User user = getUserByEmail(email);
 
         List<Essay> essays = essayRepository.findByUser(user);
         log.info("조회된 에세이 수: {}", essays.size());
@@ -94,8 +91,7 @@ public class EssayService {
     public EssayResponse updateEssay(String email, Long essayId, EssayUpdateRequest request) {
         log.info("에세이 수정 요청 - 이메일: {}, 에세이 ID: {}", email, essayId);
 
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
+        User user = getUserByEmail(email);
 
         Essay essay = essayRepository.findByIdAndUser(essayId, user)
                 .orElseThrow(() -> new RuntimeException("에세이를 찾을 수 없습니다."));
@@ -126,8 +122,7 @@ public class EssayService {
     public EssayResponse publishEssay(String email, Long essayId, EssayPublishRequest request) {
         log.info("에세이 발행 요청 - 이메일: {}, 에세이 ID: {}, 상태: {}", email, essayId, request.getStatus());
 
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
+        User user = getUserByEmail(email);
 
         Essay essay = essayRepository.findByIdAndUser(essayId, user)
                 .orElseThrow(() -> new RuntimeException("에세이를 찾을 수 없습니다."));
@@ -151,13 +146,16 @@ public class EssayService {
     public void deleteEssay(String email, Long essayId) {
         log.info("에세이 삭제 요청 - 이메일: {}, 에세이 ID: {}", email, essayId);
 
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
-
+        User user = getUserByEmail(email);
         Essay essay = essayRepository.findByIdAndUser(essayId, user)
                 .orElseThrow(() -> new RuntimeException("에세이를 찾을 수 없습니다."));
 
         essayRepository.delete(essay);
         log.info("에세이 삭제 완료 - ID: {}", essayId);
+    }
+
+    private User getUserByEmail(String email) {
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
     }
 }

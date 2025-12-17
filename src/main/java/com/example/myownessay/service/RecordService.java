@@ -35,9 +35,7 @@ public class RecordService {
     public void deleteRecord(String email, Long recordId) {
         log.info("기록 삭제 요청 (Soft Delete) - 이메일: {}, 기록 ID: {}", email, recordId);
 
-        // 사용자 조회
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
+        User user = getUserByEmail(email);
 
         // 기록 조회(소프트 삭제되지 않은 기록만 조회)
         Record record = recordRepository.findByIdAndUser(recordId, user)
@@ -54,9 +52,7 @@ public class RecordService {
     public void restoreRecord(String email, Long recordId) {
         log.info("기록 복원 요청 - 이메일: {}, 기록 ID: {}", email, recordId);
 
-        // 사용자 조회
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
+        User user = getUserByEmail(email);
 
         // 기록 조회(삭제된 기록 포함)
         Record record = recordRepository.findById(recordId)
@@ -84,9 +80,7 @@ public class RecordService {
         validator.validate(request.getContent());
         log.info("슬롯 콘텐츠 유효성 검사 통과");
 
-        // 사용자 조회
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
+        User user = getUserByEmail(email);
 
         // 기존 기록 조회
         Record record = recordRepository.findByUserAndRecordDateAndSlotType(user, date, slotType)
@@ -123,9 +117,7 @@ public class RecordService {
     public DailyRecordsResponse getDailyRecords(String email, LocalDate date) {
         log.info("일일 기록 조회 요청 - 이메일: {}, 날짜: {}", email, date);
 
-        // 사용자 조회
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
+        User user = getUserByEmail(email);
 
         // 해당 날짜의 모든 기록 조회
         List<Record> records = recordRepository.findByUserAndRecordDate(user, date);
@@ -164,9 +156,7 @@ public class RecordService {
             throw new IllegalArgumentException("조회 기간은 최대 31일을 초과할 수 없습니다.");
         }
 
-        // 사용자 조회
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
+        User user = getUserByEmail(email);
 
         // 해당 기간의 모든 기록 조회
         List<Record> records = recordRepository.findByUserAndRecordDateBetween(user, startDate, endDate);
@@ -182,9 +172,7 @@ public class RecordService {
     public double calculateWeeklyCompletionRate(String email, LocalDate weekStart) {
         log.info("주간 완료율 계산 요청 - 이메일: {}, 주 시작 날짜: {}", email, weekStart);
 
-        // 사용자 조회
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
+        User user = getUserByEmail(email);
 
         // 주의 끝 날짜 계산
         LocalDate weekEnd = weekStart.plusDays(6);
@@ -209,5 +197,10 @@ public class RecordService {
         log.info("계산된 주간 완료율: {}", weeklyRate);
 
         return weeklyRate;
+    }
+
+    private User getUserByEmail(String email) {
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
     }
 }
